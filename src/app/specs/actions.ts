@@ -350,6 +350,37 @@ export async function deleteSpec(specId: string): Promise<{ error?: string }> {
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return { error: "Not authenticated." };
 
+  const studioId = await getCurrentStudioId();
+  if (!studioId) return { error: "No studio found." };
+
+  // Verify ownership — only delete specs belonging to this studio
+  const { data: spec } = await supabase
+    .from("specs")
+    .select("id")
+    .eq("id", specId)
+    .eq("studio_id", studioId)
+    .single();
+  if (!spec) return { error: "Spec not found." };
+
+  // Block deletion if this spec is used in any project
+  const { count } = await supabase
+    .from("project_specs")
+    .select("*", { count: "exact", head: true })
+    .eq("spec_id", specId);
+
+  if (count && count > 0) {
+    return {
+      error: `This spec is used in ${count} project${count === 1 ? "" : "s"} — remove it from those projects first.`,
+    };
+  }
+
+  // Delete related rows first (in case DB doesn't cascade)
+  await Promise.all([
+    supabase.from("spec_field_values").delete().eq("spec_id", specId),
+    supabase.from("spec_tags").delete().eq("spec_id", specId),
+    supabase.from("spec_suppliers").delete().eq("spec_id", specId),
+  ]);
+
   const { error } = await supabase.from("specs").delete().eq("id", specId);
   if (error) return { error: "Failed to delete spec." };
 

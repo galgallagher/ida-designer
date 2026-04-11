@@ -8,9 +8,15 @@
  */
 
 import { useState, useTransition } from "react";
-import { UserPlus, Trash2, Loader2, Users, X, Check } from "lucide-react";
+import { UserPlus, Trash2, Loader2, Users, Check } from "lucide-react";
 import { addProjectMember, removeProjectMember } from "./actions";
 import type { StudioMemberRole } from "@/types/database";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -62,12 +68,12 @@ const roleColour: Record<StudioMemberRole, string> = {
 function AddMembersModal({
   projectId,
   available,
-  onClose,
+  onDone,
   onError,
 }: {
   projectId: string;
   available: StudioMemberOption[];
-  onClose: () => void;
+  onDone: () => void;
   onError: (msg: string) => void;
 }) {
   const [selected, setSelected] = useState<Set<string>>(new Set());
@@ -88,114 +94,98 @@ function AddMembersModal({
       const results = await Promise.all(ids.map((id) => addProjectMember(projectId, id)));
       const errors = results.map((r) => r.error).filter(Boolean);
       if (errors.length > 0) onError(errors[0]!);
-      onClose();
+      onDone();
     });
   }
 
   return (
-    /* Backdrop */
-    <div
-      className="fixed inset-0 z-40 flex items-center justify-center"
-      style={{ backgroundColor: "rgba(26,26,26,0.4)" }}
-      onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
-    >
-      {/* Modal */}
-      <div
-        className="bg-white flex flex-col"
-        style={{ borderRadius: 16, boxShadow: "0 8px 40px rgba(26,26,26,0.18)", width: 420, maxHeight: "70vh", overflow: "hidden" }}
+    <>
+      {/* Header */}
+      <DialogHeader
+        style={{ borderBottom: "1px solid #F0EEEB", padding: "16px 20px", flexShrink: 0 }}
       >
-        {/* Header */}
-        <div className="flex items-center justify-between px-5 py-4" style={{ borderBottom: "1px solid #F0EEEB", flexShrink: 0 }}>
-          <div>
-            <p style={{ fontFamily: "var(--font-inter), sans-serif", fontSize: 15, fontWeight: 600, color: "#1A1A1A" }}>
-              Add team members
-            </p>
-            {selected.size > 0 && (
-              <p style={{ fontFamily: "var(--font-inter), sans-serif", fontSize: 12, color: "#9A9590", marginTop: 1 }}>
-                {selected.size} selected
-              </p>
-            )}
-          </div>
-          <button
-            type="button"
-            onClick={onClose}
-            style={{ border: "none", background: "none", cursor: "pointer", color: "#9A9590", padding: 4, outline: "none" }}
-          >
-            <X size={18} />
-          </button>
-        </div>
+        <DialogTitle
+          style={{ fontFamily: "var(--font-inter), sans-serif", fontSize: 15, fontWeight: 600, color: "#1A1A1A" }}
+        >
+          Add team members
+        </DialogTitle>
+        {selected.size > 0 && (
+          <p style={{ fontFamily: "var(--font-inter), sans-serif", fontSize: 12, color: "#9A9590", marginTop: 1 }}>
+            {selected.size} selected
+          </p>
+        )}
+      </DialogHeader>
 
-        {/* Member list */}
-        <div style={{ overflowY: "auto", flex: 1 }}>
-          {available.map((m) => {
-            const isSelected = selected.has(m.studioMemberId);
-            return (
-              <button
-                key={m.studioMemberId}
-                type="button"
-                onClick={() => toggle(m.studioMemberId)}
-                className="flex items-center gap-3 w-full px-5 py-3 text-left transition-colors"
-                style={{
-                  border: "none",
-                  borderBottom: "1px solid #F0EEEB",
-                  background: isSelected ? "#FFFBEB" : "white",
-                  cursor: "pointer",
-                  outline: "none",
-                }}
+      {/* Member list */}
+      <div style={{ overflowY: "auto", flex: 1 }}>
+        {available.map((m) => {
+          const isSelected = selected.has(m.studioMemberId);
+          return (
+            <button
+              key={m.studioMemberId}
+              type="button"
+              onClick={() => toggle(m.studioMemberId)}
+              className="flex items-center gap-3 w-full px-5 py-3 text-left transition-colors"
+              style={{
+                border: "none",
+                borderBottom: "1px solid #F0EEEB",
+                background: isSelected ? "#FFFBEB" : "white",
+                cursor: "pointer",
+                outline: "none",
+              }}
+            >
+              {/* Avatar */}
+              <div
+                className="flex items-center justify-center flex-shrink-0"
+                style={{ width: 36, height: 36, borderRadius: "50%", backgroundColor: isSelected ? "#FFDE28" : "#F0EEEB", fontFamily: "var(--font-inter), sans-serif", fontSize: 13, fontWeight: 600, color: "#1A1A1A", transition: "background 0.15s" }}
               >
-                {/* Avatar */}
-                <div
-                  className="flex items-center justify-center flex-shrink-0"
-                  style={{ width: 36, height: 36, borderRadius: "50%", backgroundColor: isSelected ? "#FFDE28" : "#F0EEEB", fontFamily: "var(--font-inter), sans-serif", fontSize: 13, fontWeight: 600, color: "#1A1A1A", transition: "background 0.15s" }}
-                >
-                  {isSelected ? <Check size={16} /> : initials(m.firstName, m.lastName)}
-                </div>
+                {isSelected ? <Check size={16} /> : initials(m.firstName, m.lastName)}
+              </div>
 
-                {/* Name + title */}
-                <div className="flex-1 min-w-0">
-                  <p style={{ fontFamily: "var(--font-inter), sans-serif", fontSize: 13, fontWeight: 500, color: "#1A1A1A" }}>
-                    {displayName(m.firstName, m.lastName)}
+              {/* Name + title */}
+              <div className="flex-1 min-w-0">
+                <p style={{ fontFamily: "var(--font-inter), sans-serif", fontSize: 13, fontWeight: 500, color: "#1A1A1A" }}>
+                  {displayName(m.firstName, m.lastName)}
+                </p>
+                {m.jobTitle && (
+                  <p style={{ fontFamily: "var(--font-inter), sans-serif", fontSize: 11, color: "#9A9590" }}>
+                    {m.jobTitle}
                   </p>
-                  {m.jobTitle && (
-                    <p style={{ fontFamily: "var(--font-inter), sans-serif", fontSize: 11, color: "#9A9590" }}>
-                      {m.jobTitle}
-                    </p>
-                  )}
-                </div>
+                )}
+              </div>
 
-                {/* Role dot */}
-                <span
-                  className="inline-block rounded-full flex-shrink-0"
-                  style={{ width: 7, height: 7, backgroundColor: roleColour[m.role] }}
-                  title={m.role}
-                />
-              </button>
-            );
-          })}
-        </div>
-
-        {/* Footer */}
-        <div className="flex items-center justify-end gap-3 px-5 py-4" style={{ borderTop: "1px solid #F0EEEB", flexShrink: 0 }}>
-          <button
-            type="button"
-            onClick={onClose}
-            style={{ height: 36, paddingLeft: 16, paddingRight: 16, backgroundColor: "transparent", border: "1px solid #E4E1DC", borderRadius: 8, fontFamily: "var(--font-inter), sans-serif", fontSize: 13, fontWeight: 500, color: "#9A9590", cursor: "pointer", outline: "none" }}
-          >
-            Cancel
-          </button>
-          <button
-            type="button"
-            onClick={handleAdd}
-            disabled={selected.size === 0 || isPending}
-            className="flex items-center gap-1.5 transition-opacity"
-            style={{ height: 36, paddingLeft: 16, paddingRight: 16, backgroundColor: selected.size > 0 ? "#FFDE28" : "#F0EEEB", border: "none", borderRadius: 8, fontFamily: "var(--font-inter), sans-serif", fontSize: 13, fontWeight: 600, color: selected.size > 0 ? "#1A1A1A" : "#C0BEBB", cursor: selected.size > 0 ? "pointer" : "default", outline: "none", transition: "background 0.15s" }}
-          >
-            {isPending ? <Loader2 size={14} className="animate-spin" /> : null}
-            {isPending ? "Adding…" : `Add${selected.size > 0 ? ` ${selected.size}` : ""}`}
-          </button>
-        </div>
+              {/* Role dot */}
+              <span
+                className="inline-block rounded-full flex-shrink-0"
+                style={{ width: 7, height: 7, backgroundColor: roleColour[m.role] }}
+                title={m.role}
+              />
+            </button>
+          );
+        })}
       </div>
-    </div>
+
+      {/* Footer */}
+      <div className="flex items-center justify-end gap-3 px-5 py-4" style={{ borderTop: "1px solid #F0EEEB", flexShrink: 0 }}>
+        <button
+          type="button"
+          onClick={onDone}
+          style={{ height: 36, paddingLeft: 16, paddingRight: 16, backgroundColor: "transparent", border: "1px solid #E4E1DC", borderRadius: 8, fontFamily: "var(--font-inter), sans-serif", fontSize: 13, fontWeight: 500, color: "#9A9590", cursor: "pointer", outline: "none" }}
+        >
+          Cancel
+        </button>
+        <button
+          type="button"
+          onClick={handleAdd}
+          disabled={selected.size === 0 || isPending}
+          className="flex items-center gap-1.5 transition-opacity"
+          style={{ height: 36, paddingLeft: 16, paddingRight: 16, backgroundColor: selected.size > 0 ? "#FFDE28" : "#F0EEEB", border: "none", borderRadius: 8, fontFamily: "var(--font-inter), sans-serif", fontSize: 13, fontWeight: 600, color: selected.size > 0 ? "#1A1A1A" : "#C0BEBB", cursor: selected.size > 0 ? "pointer" : "default", outline: "none", transition: "background 0.15s" }}
+        >
+          {isPending ? <Loader2 size={14} className="animate-spin" /> : null}
+          {isPending ? "Adding…" : `Add${selected.size > 0 ? ` ${selected.size}` : ""}`}
+        </button>
+      </div>
+    </>
   );
 }
 
@@ -353,14 +343,19 @@ export default function ProjectTeamClient({
       )}
 
       {/* Multi-select modal */}
-      {showModal && (
-        <AddMembersModal
-          projectId={projectId}
-          available={availableMembers}
-          onClose={() => setShowModal(false)}
-          onError={setError}
-        />
-      )}
+      <Dialog open={showModal} onOpenChange={setShowModal}>
+        <DialogContent
+          style={{ width: 420, padding: 0, overflow: "hidden", borderRadius: 16 }}
+          className="flex flex-col max-h-[70vh] gap-0"
+        >
+          <AddMembersModal
+            projectId={projectId}
+            available={availableMembers}
+            onDone={() => setShowModal(false)}
+            onError={setError}
+          />
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
