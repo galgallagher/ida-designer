@@ -13,6 +13,13 @@ import { useState, useTransition } from "react";
 import { Trash2, Loader2, Shield, UserCircle, UserPlus, X, Check } from "lucide-react";
 import { updateMemberAccessRole, updateMemberJobTitle, removeMember, addMember } from "./actions";
 import type { StudioMemberRole, StudioRoleRow } from "@/types/database";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -103,21 +110,6 @@ function MemberRow({
     });
   }
 
-  const selectStyle: React.CSSProperties = {
-    height: 32,
-    paddingLeft: 8,
-    paddingRight: 24,
-    fontFamily: "var(--font-inter), sans-serif",
-    fontSize: 12,
-    color: "#1A1A1A",
-    backgroundColor: "#FAFAF9",
-    border: "1.5px solid #E4E1DC",
-    borderRadius: 7,
-    outline: "none",
-    cursor: "pointer",
-    appearance: "auto",
-  };
-
   return (
     <div
       className="flex items-center gap-4 px-4 py-3 bg-white"
@@ -164,31 +156,37 @@ function MemberRow({
       </div>
 
       {/* Job title select */}
-      <select
-        value={member.studio_role_id ?? ""}
-        onChange={(e) => handleJobTitleChange(e.target.value)}
+      <Select
+        value={member.studio_role_id ?? "__none__"}
+        onValueChange={(val) => handleJobTitleChange(val === "__none__" ? "" : val)}
         disabled={isPending}
-        style={selectStyle}
-        title="Job title"
       >
-        <option value="">No title</option>
-        {roles.map((r) => (
-          <option key={r.id} value={r.id}>{r.name}</option>
-        ))}
-      </select>
+        <SelectTrigger className="h-8 text-xs w-[130px]" style={{ fontFamily: "var(--font-inter), sans-serif" }}>
+          <SelectValue placeholder="No title" />
+        </SelectTrigger>
+        <SelectContent style={{ fontFamily: "var(--font-inter), sans-serif", fontSize: 12 }}>
+          <SelectItem value="__none__">No title</SelectItem>
+          {roles.map((r) => (
+            <SelectItem key={r.id} value={r.id}>{r.name}</SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
 
       {/* Access role select */}
-      <select
+      <Select
         value={member.role}
-        onChange={(e) => handleAccessRoleChange(e.target.value as StudioMemberRole)}
+        onValueChange={(val) => handleAccessRoleChange(val as StudioMemberRole)}
         disabled={isPending}
-        style={selectStyle}
-        title="Access level"
       >
-        {ACCESS_ROLES.map((r) => (
-          <option key={r.value} value={r.value}>{r.label}</option>
-        ))}
-      </select>
+        <SelectTrigger className="h-8 text-xs w-[110px]" style={{ fontFamily: "var(--font-inter), sans-serif" }}>
+          <SelectValue />
+        </SelectTrigger>
+        <SelectContent style={{ fontFamily: "var(--font-inter), sans-serif", fontSize: 12 }}>
+          {ACCESS_ROLES.map((r) => (
+            <SelectItem key={r.value} value={r.value}>{r.label}</SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
 
       {/* Remove button */}
       <button
