@@ -10,6 +10,7 @@ import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { ArrowLeft, ExternalLink, Tag, Package, Pencil } from "lucide-react";
 import AppShell from "@/components/AppShell";
+import DeleteSpecButton from "./DeleteSpecButton";
 import type { SpecRow } from "@/types/database";
 
 interface PageProps {
@@ -108,7 +109,7 @@ export default async function SpecDetailPage({ params }: PageProps) {
           {/* Tags */}
           {tags.length > 0 && (
             <div className="flex flex-wrap gap-1.5 mt-4">
-              {tags.map((tag) => (
+              {tags.filter((t) => !t.startsWith("source:")).map((tag) => (
                 <span key={tag} className="flex items-center gap-1 px-2.5 py-1" style={{ backgroundColor: "#F0EEEB", borderRadius: 6, fontFamily: "var(--font-inter), sans-serif", fontSize: 11, color: "#9A9590" }}>
                   <Tag size={9} />{tag}
                 </span>
@@ -141,13 +142,16 @@ export default async function SpecDetailPage({ params }: PageProps) {
                 </p>
               )}
             </div>
-            <Link
-              href={`/specs/${id}/edit`}
-              className="flex items-center gap-1.5 transition-opacity hover:opacity-70"
-              style={{ fontFamily: "var(--font-inter), sans-serif", fontSize: 12, color: "#9A9590", textDecoration: "none" }}
-            >
-              <Pencil size={12} /> Edit
-            </Link>
+            <div className="flex items-center gap-4">
+              <DeleteSpecButton specId={id} />
+              <Link
+                href={`/specs/${id}/edit`}
+                className="flex items-center gap-1.5 transition-opacity hover:opacity-70"
+                style={{ fontFamily: "var(--font-inter), sans-serif", fontSize: 12, color: "#9A9590", textDecoration: "none" }}
+              >
+                <Pencil size={12} /> Edit
+              </Link>
+            </div>
           </div>
 
           {/* Cost */}
@@ -163,30 +167,33 @@ export default async function SpecDetailPage({ params }: PageProps) {
             </div>
           )}
 
-          {/* Characteristics */}
+          {/* Characteristics — show all template fields; empty ones show a dash */}
           {fields.length > 0 && (
             <div className="mb-6">
               <p style={{ fontFamily: "var(--font-inter), sans-serif", fontSize: 10, fontWeight: 600, color: "#9A9590", textTransform: "uppercase", letterSpacing: "0.07em", marginBottom: 12 }}>Characteristics</p>
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", rowGap: 14, columnGap: 24 }}>
                 {fields.map((field) => {
                   const val = valueMap.get(field.id);
-                  if (!val) return null;
                   const isUrl = field.field_type === "url";
                   return (
                     <div key={field.id}>
                       <p style={{ fontFamily: "var(--font-inter), sans-serif", fontSize: 10, fontWeight: 600, color: "#B0AEA9", textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 3 }}>{field.name}</p>
-                      {isUrl ? (
-                        <a
-                          href={val}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="inline-flex items-center gap-1 hover:opacity-70 transition-opacity"
-                          style={{ fontFamily: "var(--font-inter), sans-serif", fontSize: 12, fontWeight: 500, color: "#6B7280", textDecoration: "none", background: "#F0EEEB", borderRadius: 6, padding: "3px 8px" }}
-                        >
-                          View <ExternalLink size={9} />
-                        </a>
+                      {val ? (
+                        isUrl ? (
+                          <a
+                            href={val}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="inline-flex items-center gap-1 hover:opacity-70 transition-opacity"
+                            style={{ fontFamily: "var(--font-inter), sans-serif", fontSize: 12, fontWeight: 500, color: "#6B7280", textDecoration: "none", background: "#F0EEEB", borderRadius: 6, padding: "3px 8px" }}
+                          >
+                            View <ExternalLink size={9} />
+                          </a>
+                        ) : (
+                          <p style={{ fontFamily: "var(--font-inter), sans-serif", fontSize: 13, color: "#1A1A1A", lineHeight: 1.4 }}>{val}</p>
+                        )
                       ) : (
-                        <p style={{ fontFamily: "var(--font-inter), sans-serif", fontSize: 13, color: "#1A1A1A", lineHeight: 1.4 }}>{val}</p>
+                        <p style={{ fontFamily: "var(--font-inter), sans-serif", fontSize: 13, color: "#D4D2CF", lineHeight: 1.4 }}>—</p>
                       )}
                     </div>
                   );

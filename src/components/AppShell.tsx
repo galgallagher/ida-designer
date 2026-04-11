@@ -19,6 +19,7 @@ import { cookies } from "next/headers";
 import { createClient } from "@/lib/supabase/server";
 import { signOut } from "@/app/login/actions";
 import SidebarNav from "./SidebarNav";
+import IdaWidget from "./IdaWidget";
 import type { ProfileRow, ClientRow, StudioRow, StudioMemberRole } from "@/types/database";
 
 interface AppShellProps {
@@ -175,6 +176,9 @@ export default async function AppShell({ children }: AppShellProps) {
       >
         {children}
       </main>
+
+      {/* Ida — AI Design Assistant (persistent, all pages) */}
+      <IdaWidget />
     </div>
   );
 }
