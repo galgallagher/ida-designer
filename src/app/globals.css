@@ -82,3 +82,9 @@
     font-family: var(--font-inter), sans-serif;
   }
 }
+
+/* Ida thinking dots animation */
+@keyframes ida-bounce {
+  0%, 60%, 100% { transform: translateY(0); opacity: 0.4; }
+  30% { transform: translateY(-5px); opacity: 1; }
+}

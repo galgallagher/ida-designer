@@ -1,7 +1,7 @@
 # Ida Designer — Project Memory
 
 > Keep this file under 200 lines. Update it as the project evolves.
-> Last updated: 2026-04-10 (session 6)
+> Last updated: 2026-04-11 (session 7)
 
 ## What is this project?
 
@@ -9,7 +9,7 @@ A SaaS platform for interior design studios. Studios manage clients, projects, d
 
 ## Current phase
 
-**Phase 9 — Studio roles + project team.** `studio_roles` table for configurable job titles (migrations 021+022), `project_members` join table. Settings pages `/settings/roles` and `/settings/members` live. Project team page `/projects/[id]/team` live. ADR 013 written. Build clean, zero TypeScript errors.
+**Phase 10 — shadcn/ui migration complete.** Foundation (CSS variables, Tailwind tokens, `cn()`) installed in session 6. All Radix UI primitives migrated in session 7: Tooltip (IconRail), Select (MembersClient), DropdownMenu (StudioSwitcher), Dialog (ProjectTeamClient + SpecDetailModal), Sheet (ContactDetailPanel). Visual design unchanged — only behaviour layer replaced. Build clean, zero TypeScript errors.
 
 ## Tech stack
 
@@ -18,7 +18,7 @@ A SaaS platform for interior design studios. Studios manage clients, projects, d
 | Framework | Next.js 15, App Router |
 | Database | Supabase (Postgres + Auth + RLS + Storage) |
 | Auth | Supabase Auth + @supabase/ssr@0.10.2 (cookie sessions) |
-| CSS | Tailwind CSS + inline style tokens |
+| CSS | Tailwind CSS + inline style tokens + shadcn/ui (Radix primitives) |
 | Language | TypeScript (strict, zero `as any`) |
 
 See `docs/adr/001-tech-stack.md` for full reasoning.
@@ -122,9 +122,15 @@ Card shadow:      0 2px 12px rgba(26,26,26,0.08)
 
 ## Modal / panel patterns
 
-- **Centred pop-out** — create/edit forms: `position: fixed, top: 50%, left: 50%, transform: translate(-50%,-50%) scale(1)`
-- **Slide-in panel** — record detail: `position: fixed, right: 0, height: 100%, transform: translateX(0/100%)`
-- **Full overlay** — spec detail modal: fade+scale, Escape + backdrop to close
+All modals and panels now use shadcn/Radix primitives — Escape, backdrop click, focus trap, scroll lock, and ARIA are all handled automatically.
+
+- **Centred Dialog** — `<Dialog>` + `<DialogContent>` — used for: Add Team Members (ProjectTeamClient), Spec Detail (SpecDetailModal)
+- **Slide-in Sheet** — `<Sheet side="right">` — used for: Contact Detail Panel (480px wide)
+- **Dropdown** — `<DropdownMenu>` — used for: StudioSwitcher
+- **Select** — `<Select>` — used for: Members page job title + access role
+- **Tooltip** — `<Tooltip>` — used for: IconRail collapsed icon labels
+
+shadcn components live in `src/components/ui/`. Installed: tooltip, select, dropdown-menu, dialog, sheet.
 
 ## Known technical debt (do not fix without planning)
 
@@ -134,10 +140,30 @@ Card shadow:      0 2px 12px rgba(26,26,26,0.08)
 - Two separate `AddProjectModal.tsx` files (`/clients/[id]/` and `/projects/`) — merge when next feature touches the form
 - `src/types/database.ts` is hand-written — replace with `npx supabase gen types typescript` when schema stabilises
 
+## Ida — AI Design Assistant
+
+Persistent chat widget (bottom-right bubble) that lives in AppShell. Always has page context. Built on Vercel AI SDK + Claude.
+
+**Architecture:** `src/lib/ida/skills/` — each skill is a file exporting a tool definition + handler. Route assembles relevant skills based on current page. See ADR 014.
+
+**Skills planned:**
+- `scrape-spec` — extract product spec from URL (Jina Reader → Claude Haiku)
+- `create-category` — create a new spec category mid-conversation
+- `save-spec` — write confirmed spec to DB
+
+**Config page (owner only):** `/settings/ida` — view skill prompts, enable/disable skills, see token usage. Not built yet — flagged as important for Gal to maintain Ida's behaviour over time without touching code.
+
+**Key rules:**
+- `ANTHROPIC_API_KEY` is server-only (no NEXT_PUBLIC_)
+- Browser → `/api/ida` → Anthropic. Never direct.
+- Categories always injected into context at scrape time
+- If product category doesn't exist → Ida asks, then calls `create-category` tool
+
 ## Next steps (priority order)
 
-- [ ] **AI spec scraping** — "Add from URL" button, `/api/scrape-spec/route.ts`, Anthropic API server-side, pre-fills NewSpecClient. ADR 014 needed.
-- [ ] **Project sub-pages** — `/projects/[id]/specs` and `/projects/[id]/drawings` (currently show empty states)
-- [ ] **Invite team members** — Supabase Auth `inviteUserByEmail` via service role key, `/settings/members` invite form
+- [ ] **Ida widget shell** — floating bubble, expand/collapse, `useChat` hook, streaming. ADR 014.
+- [ ] **Ida spec scraping skill** — Jina + Haiku extraction, image picker, category matching, save to library
+- [ ] **Ida config page** — `/settings/ida` for viewing/editing skill prompts without touching code
+- [ ] **Project sub-pages** — `/projects/[id]/specs` and `/projects/[id]/drawings`
+- [ ] **Invite team members** — Supabase Auth `inviteUserByEmail`
 - [ ] **Drawing viewer** — upload + hotspot overlay (large feature)
-- [ ] **Refactor oversized components** — do when already in the file for another reason

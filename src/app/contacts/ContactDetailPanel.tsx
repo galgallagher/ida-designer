@@ -11,6 +11,7 @@ import {
   updateContactTags, createContactPerson, updateContactPerson, deleteContactPerson,
   type ContactDetailData,
 } from "./actions";
+import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 
 interface Props {
   companyId: string | null;
@@ -44,7 +45,6 @@ const inputStyle: React.CSSProperties = {
 export default function ContactDetailPanel({ companyId, categories, onClose, onDeleted }: Props) {
   const [data, setData] = useState<ContactDetailData | null>(null);
   const [loading, setLoading] = useState(false);
-  const [visible, setVisible] = useState(false);
 
   const fetchData = useCallback(async (id: string) => {
     setLoading(true);
@@ -54,50 +54,25 @@ export default function ContactDetailPanel({ companyId, categories, onClose, onD
   }, []);
 
   useEffect(() => {
-    if (!companyId) { setVisible(false); setData(null); return; }
-    setVisible(true);
+    if (!companyId) { setData(null); return; }
     fetchData(companyId);
   }, [companyId, fetchData]);
-
-  // ESC key
-  useEffect(() => {
-    if (!companyId) return;
-    const handler = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
-    document.addEventListener("keydown", handler);
-    return () => document.removeEventListener("keydown", handler);
-  }, [companyId, onClose]);
-
-  if (!companyId) return null;
 
   const topLevel = categories.filter((c) => !c.parent_id);
   const childrenOf = (pid: string) => categories.filter((c) => c.parent_id === pid);
 
   return (
-    <>
-      {/* Backdrop */}
-      <div
-        onClick={onClose}
-        style={{
-          position: "fixed", inset: 0, zIndex: 40,
-          backgroundColor: "rgba(26,26,26,0.25)",
-          opacity: visible ? 1 : 0,
-          transition: "opacity 0.2s ease",
-          backdropFilter: "blur(1px)",
-        }}
-      />
-
-      {/* Panel */}
-      <div
-        style={{
-          position: "fixed", top: 0, right: 0, bottom: 0,
-          width: 480, zIndex: 41,
-          backgroundColor: "#FFFFFF",
-          boxShadow: "-8px 0 40px rgba(26,26,26,0.12)",
-          display: "flex", flexDirection: "column",
-          transform: visible ? "translateX(0)" : "translateX(100%)",
-          transition: "transform 0.25s cubic-bezier(0.4, 0, 0.2, 1)",
-        }}
+    <Sheet open={!!companyId} onOpenChange={(open) => { if (!open) onClose(); }}>
+      <SheetContent
+        side="right"
+        style={{ width: 480, padding: 0, display: "flex", flexDirection: "column" }}
+        className="[&>button]:hidden"
       >
+        {/* Visually hidden title for accessibility */}
+        <SheetHeader className="sr-only">
+          <SheetTitle>{loading ? "Loading…" : (data?.company.name ?? "Contact")}</SheetTitle>
+        </SheetHeader>
+
         {/* Header */}
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "18px 20px 14px", borderBottom: "1px solid #F0EEEB", flexShrink: 0 }}>
           <p style={{ fontFamily: "var(--font-inter), sans-serif", fontSize: 13, fontWeight: 600, color: "#1A1A1A" }}>
@@ -110,7 +85,7 @@ export default function ContactDetailPanel({ companyId, categories, onClose, onD
 
         {/* Scrollable body */}
         <div style={{ flex: 1, overflowY: "auto" }}>
-          {loading || !data ? (
+          {loading || !data || !companyId ? (
             <LoadingSkeleton />
           ) : (
             <div style={{ padding: "20px 20px 32px" }}>
@@ -141,8 +116,8 @@ export default function ContactDetailPanel({ companyId, categories, onClose, onD
             </div>
           )}
         </div>
-      </div>
-    </>
+      </SheetContent>
+    </Sheet>
   );
 }
 

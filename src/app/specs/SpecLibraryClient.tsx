@@ -531,7 +531,7 @@ function SpecRowItem({ spec, onOpen, categories }: { spec: EnrichedSpec; onOpen:
           )}
         </div>
         <div className="hidden sm:flex flex-wrap gap-1">
-          {spec.tags.slice(0, 3).map((tag) => (
+          {spec.tags.filter((t) => !t.startsWith("source:")).slice(0, 3).map((tag) => (
             <span key={tag} className="px-2 py-0.5" style={{ backgroundColor: "#F0EEEB", borderRadius: 6, fontFamily: "var(--font-inter), sans-serif", fontSize: 11, color: "#9A9590" }}>
               {tag}
             </span>

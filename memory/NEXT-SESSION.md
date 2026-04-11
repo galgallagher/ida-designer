@@ -1,6 +1,6 @@
 # Ida Designer — Next Session Handoff
 
-> Written: 2026-04-10 (session 5). Read this at the start of a new session before touching any code.
+> Written: 2026-04-11 (session 7). Read this at the start of a new session before touching any code.
 > Also read `MEMORY.md` for full project context and `docs/adr/` for architectural decisions.
 
 ---
@@ -9,19 +9,15 @@
 
 The app is working and running at **http://localhost:3001** (start with `npm run dev` in the project root — it always runs on port 3001).
 
-Sessions 4 + 5 completed:
-- **Contacts CRM** — `/contacts` with category sidebar, company list, slide-in detail panel, `/settings/contacts`
-- **Spec detail modal** — clicking a spec card opens an overlay, not a new page
-- **Spec image upload** — URL input + file upload (max 2 MB) on New Spec + Edit Spec. Storage bucket `spec-images` via migration 020.
-- **✅ Full `as any` sweep** — zero casts remaining across the entire codebase. TypeScript compiles clean. Root causes fixed:
-  - `@supabase/ssr` upgraded from `0.5.2` → `0.10.2` (was mismatched with `supabase-js@2.102.1`)
-  - All missing tables added to `src/types/database.ts` (`contacts`, `user_project_stars`, `spec_categories`, `spec_tags`, `spec_suppliers`)
-  - `Insertable<T>` utility type added — nullable columns are now optional in Insert payloads
-  - `seed_default_contact_categories` RPC added to `Database.Functions`
-  - Update types for `clients` + `contacts` allow `updated_at`
-  - Shared `adminGuard()` extracted to `src/lib/admin-guard.ts` (was duplicated in 3 files)
-  - Nullable `parent_id` filter uses `.is("parent_id", null)` not `.eq("parent_id", null)`
-  - See **ADR 012** for the full story
+Sessions 6 + 7 completed:
+- **Studio roles + project team** — `studio_roles` table (migration 021), `project_members` table (migration 022), `studio_members` updated with pending support (migration 023). Settings pages `/settings/roles` and `/settings/members` live. `/projects/[id]/team` live. ADR 013 written.
+- **shadcn/ui migration** — Radix UI primitive layer installed under the existing design. Visual design is unchanged. Components migrated:
+  - `Tooltip` → IconRail collapsed icon labels
+  - `Select` → MembersClient job title + access role dropdowns
+  - `DropdownMenu` → StudioSwitcher
+  - `Dialog` → ProjectTeamClient (add members modal) + SpecDetailModal
+  - `Sheet` → ContactDetailPanel (right-side panel)
+  - All installed in `src/components/ui/`. Escape, backdrop, focus trap, scroll lock all handled by Radix automatically.
 
 ---
 
