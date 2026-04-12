@@ -277,6 +277,23 @@ export default function SpecDetailModal({ specId, onClose }: Props) {
                   </p>
                 )}
 
+                {/* Global library badge */}
+                {spec?.global_spec_id && (
+                  <div style={{
+                    display: "inline-flex", alignItems: "center", gap: 4, marginTop: 10,
+                    padding: "3px 8px", borderRadius: 6,
+                    background: "#F5F3FF", border: "1px solid #E0DAFF",
+                  }}>
+                    <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#7C3AED" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/>
+                      <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/>
+                    </svg>
+                    <span style={{ fontFamily: "var(--font-inter), sans-serif", fontSize: 9, color: "#7C3AED", fontWeight: 500, letterSpacing: "0.02em" }}>
+                      Shared library
+                    </span>
+                  </div>
+                )}
+
                 {/* Product page link */}
                 {spec?.source_url && (
                   <a

@@ -90,6 +90,18 @@ export async function createProject(formData: FormData): Promise<CreateProjectRe
 
   if (projectError || !newProject) return { error: "Failed to create project. Please try again." };
 
+  // ── Create default Option A for the new project ────────────────────────────
+  // Every project must have at least one option. This is created silently —
+  // studios can rename, add more options (B, C…), or change the default later.
+  await supabase.from("project_options").insert({
+    studio_id: studioId,
+    project_id: newProject.id,
+    name: "Option A",
+    label: "A",
+    sort_order: 0,
+    is_default: true,
+  });
+
   revalidatePath("/projects");
   revalidatePath("/clients");
   revalidatePath(`/clients/${clientId}`);

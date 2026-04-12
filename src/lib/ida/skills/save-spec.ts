@@ -21,6 +21,7 @@ type SaveSpecParams = {
   cost_unit: string | null;
   tags: string[];
   source_url: string | null;
+  global_spec_id: string | null;
 };
 
 export const saveSpecTool = () =>
@@ -39,10 +40,11 @@ export const saveSpecTool = () =>
         cost_unit: { type: ["string", "null"], description: "e.g. 'per m²'" },
         tags: { type: "array", items: { type: "string" }, description: "Tags for the spec" },
         source_url: { type: ["string", "null"], description: "The original product URL" },
+        global_spec_id: { type: ["string", "null"], description: "UUID of the global spec if sourced from the global library" },
       },
       required: ["name", "tags"],
     }),
-    execute: async ({ name, description, category_id, image_url, cost_from, cost_to, cost_unit, tags, source_url }: SaveSpecParams) => {
+    execute: async ({ name, description, category_id, image_url, cost_from, cost_to, cost_unit, tags, source_url, global_spec_id }: SaveSpecParams) => {
       const supabase = await createClient();
       const studioId = await getCurrentStudioId();
 
@@ -63,6 +65,7 @@ export const saveSpecTool = () =>
           cost_from: cost_from ?? null,
           cost_to: cost_to ?? null,
           cost_unit: cost_unit ?? null,
+          global_spec_id: global_spec_id ?? null,
         })
         .select("id, name")
         .single();
