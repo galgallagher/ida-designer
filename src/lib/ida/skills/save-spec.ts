@@ -8,6 +8,8 @@
 import { tool, jsonSchema } from "ai";
 import { createClient } from "@/lib/supabase/server";
 import { getCurrentStudioId } from "@/lib/studio-context";
+import { extractVisualTags } from "@/lib/ida/extract-visual-tags";
+import { resolveTemplateId } from "@/lib/ida/resolve-template";
 
 type SaveSpecParams = {
   name: string;
@@ -46,25 +48,7 @@ export const saveSpecTool = () =>
 
       if (!studioId) return { error: "No studio context found." };
 
-      const { data: templates } = await supabase
-        .from("spec_templates")
-        .select("id")
-        .eq("studio_id", studioId)
-        .eq("is_active", true)
-        .order("created_at", { ascending: true })
-        .limit(1);
-
-      let templateId = templates?.[0]?.id;
-
-      if (!templateId) {
-        const { data: newTemplate } = await supabase
-          .from("spec_templates")
-          .insert({ studio_id: studioId, name: "General", is_active: true })
-          .select("id")
-          .single();
-        templateId = newTemplate?.id;
-      }
-
+      const templateId = await resolveTemplateId(supabase, studioId, category_id ?? null);
       if (!templateId) return { error: "Could not find or create a spec template." };
 
       const { data: spec, error: specError } = await supabase
@@ -85,8 +69,14 @@ export const saveSpecTool = () =>
 
       if (specError || !spec) return { error: `Failed to save spec: ${specError?.message}` };
 
-      if (tags.length > 0) {
-        await supabase.from("spec_tags").insert(tags.map((tag: string) => ({ spec_id: spec.id, tag })));
+      // If an image was chosen, run vision analysis to extract visual tags
+      const visualTags = image_url ? await extractVisualTags(image_url) : [];
+
+      const allTags = [...tags, ...visualTags];
+      if (allTags.length > 0) {
+        await supabase.from("spec_tags").insert(
+          allTags.map((tag: string) => ({ spec_id: spec.id, tag }))
+        );
       }
 
       if (source_url) {

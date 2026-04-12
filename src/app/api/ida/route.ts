@@ -20,6 +20,7 @@ import { buildSystemPrompt } from "@/lib/ida/system-prompt";
 import { scrapeSpecTool } from "@/lib/ida/skills/scrape-spec";
 import { createCategoryTool } from "@/lib/ida/skills/create-category";
 import { saveSpecTool } from "@/lib/ida/skills/save-spec";
+import { searchSpecsTool } from "@/lib/ida/skills/search-specs";
 
 export const maxDuration = 60; // Allow up to 60s for scraping + extraction
 
@@ -79,6 +80,7 @@ export async function POST(req: Request) {
       scrapeSpec: scrapeSpecTool(categoryNames),
       createCategory: createCategoryTool(),
       saveSpec: saveSpecTool(),
+      searchSpecs: searchSpecsTool(),
     },
     maxSteps: 5,
   });

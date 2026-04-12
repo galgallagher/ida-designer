@@ -174,6 +174,7 @@ export type SpecRow = {
   description: string | null;
   image_url: string | null;
   image_path: string | null;
+  source_url: string | null;
   cost_from: number | null;
   cost_to: number | null;
   cost_unit: string | null;

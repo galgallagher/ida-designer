@@ -262,8 +262,8 @@ export async function updateSpec(specId: string, formData: FormData): Promise<Up
 export interface SpecDetailData {
   spec: {
     id: string; name: string; description: string | null; image_url: string | null;
-    template_id: string; category_id: string | null; cost_from: number | null;
-    cost_to: number | null; cost_unit: string | null; created_at: string;
+    source_url: string | null; template_id: string; category_id: string | null;
+    cost_from: number | null; cost_to: number | null; cost_unit: string | null; created_at: string;
   };
   category: { id: string; name: string } | null;
   fields: { id: string; name: string; field_type: string; order_index: number }[];
@@ -329,10 +329,10 @@ export async function getSpecDetail(id: string): Promise<SpecDetailData | null> 
   return {
     spec: {
       id: spec.id, name: spec.name, description: spec.description ?? null,
-      image_url: spec.image_url ?? null, template_id: spec.template_id,
-      category_id: spec.category_id ?? null, cost_from: spec.cost_from ?? null,
-      cost_to: spec.cost_to ?? null, cost_unit: spec.cost_unit ?? null,
-      created_at: spec.created_at,
+      image_url: spec.image_url ?? null, source_url: spec.source_url ?? null,
+      template_id: spec.template_id, category_id: spec.category_id ?? null,
+      cost_from: spec.cost_from ?? null, cost_to: spec.cost_to ?? null,
+      cost_unit: spec.cost_unit ?? null, created_at: spec.created_at,
     },
     category: catData ?? null,
     fields: fieldsData ?? [],

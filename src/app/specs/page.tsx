@@ -5,6 +5,7 @@
  * Server component: fetches categories + specs, passes to client for filtering/search.
  */
 
+import { Suspense } from "react";
 import { createClient } from "@/lib/supabase/server";
 import { getCurrentStudioId } from "@/lib/studio-context";
 import AppShell from "@/components/AppShell";
@@ -54,25 +55,28 @@ export default async function SpecLibraryPage() {
     .select("spec_id, supplier_id")
     .in("spec_id", specs.map((s) => s.id));
 
-  // Fetch supplier names from contact_companies
+  // Fetch supplier details from contact_companies (including website for grouped view)
   const { data: suppliersData } = await supabase
     .from("contact_companies")
-    .select("id, name")
+    .select("id, name, website")
     .eq("studio_id", studioId)
     .order("name", { ascending: true });
 
-  const supplierMap = new Map((suppliersData ?? []).map((s) => [s.id, s.name]));
+  type SupplierRef = { id: string; name: string; website: string | null };
+  const supplierMap = new Map<string, SupplierRef>(
+    (suppliersData ?? []).map((s) => [s.id, { id: s.id, name: s.name, website: s.website ?? null }])
+  );
 
-  // Build tag map and supplier name map per spec
+  // Build tag map and supplier map per spec
   const tagsBySpec: Record<string, string[]> = {};
   for (const t of tagsData ?? []) {
     (tagsBySpec[t.spec_id] ??= []).push(t.tag);
   }
 
-  const suppliersBySpec: Record<string, string[]> = {};
+  const suppliersBySpec: Record<string, SupplierRef[]> = {};
   for (const ss of specSupplierData ?? []) {
-    const name = supplierMap.get(ss.supplier_id);
-    if (name) (suppliersBySpec[ss.spec_id] ??= []).push(name);
+    const sup = supplierMap.get(ss.supplier_id);
+    if (sup) (suppliersBySpec[ss.spec_id] ??= []).push(sup);
   }
 
   // Build category lookup
@@ -83,16 +87,18 @@ export default async function SpecLibraryPage() {
     ...s,
     categoryName: s.category_id ? (categoryMap.get(s.category_id) ?? null) : null,
     tags: tagsBySpec[s.id] ?? [],
-    supplierNames: suppliersBySpec[s.id] ?? [],
+    suppliers: suppliersBySpec[s.id] ?? [],
   }));
 
   return (
     <AppShell>
-      <SpecLibraryClient
-        specs={enrichedSpecs}
-        categories={categories}
-        allSuppliers={suppliersData ?? []}
-      />
+      <Suspense>
+        <SpecLibraryClient
+          specs={enrichedSpecs}
+          categories={categories}
+          allSuppliers={(suppliersData ?? []).map((s) => ({ id: s.id, name: s.name, website: s.website ?? null }))}
+        />
+      </Suspense>
     </AppShell>
   );
 }
