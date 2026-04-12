@@ -1,8 +1,8 @@
 /**
  * scrapeSpec skill
  *
- * Fetches a product URL via Jina Reader (free, handles JS-rendered pages),
- * extracts candidate images via heuristics (no AI vision cost),
+ * Fetches a product URL via Firecrawl (preferred) or Jina Reader (fallback),
+ * extracts candidate images from raw HTML (not Markdown) for best fidelity,
  * then uses Claude Haiku to extract structured spec data.
  *
  * Also:
@@ -13,14 +13,35 @@
 
 import { tool, jsonSchema } from "ai";
 
-// ── Image heuristic filter ─────────────────────────────────────────────────
+// ── URL utilities ──────────────────────────────────────────────────────────
 
-const SKIP_PATTERNS = [
-  /logo/i, /icon/i, /badge/i, /avatar/i, /favicon/i,
+const UTM_PARAMS = [
+  "utm_source", "utm_medium", "utm_campaign", "utm_term", "utm_content", "utm_id",
+  "fbclid", "gclid", "msclkid", "mc_cid", "mc_eid",
+];
+
+/** Strip tracking/UTM query params from a URL, return the clean version. */
+function stripTrackingParams(url: string): string {
+  try {
+    const u = new URL(url);
+    UTM_PARAMS.forEach((p) => u.searchParams.delete(p));
+    return u.toString();
+  } catch {
+    return url;
+  }
+}
+
+// ── Skip patterns for image filtering ─────────────────────────────────────
+
+const IMAGE_SKIP_PATTERNS = [
+  /placeholder/i, /loading/i, /spinner/i,
+  /icon/i, /logo/i, /svg/i,
+  /1x1/i, /blank/i,
+  /badge/i, /avatar/i, /favicon/i,
   /banner/i, /hero-bg/i, /background/i, /sprite/i,
-  /\.svg$/i, /\.gif$/i,
+  /\.gif$/i,
   /tracking/i, /pixel/i, /analytics/i,
-  /1x1/i, /spacer/i,
+  /spacer/i,
 ];
 
 const PREFER_PATTERNS = [
@@ -29,7 +50,7 @@ const PREFER_PATTERNS = [
 ];
 
 function scoreImage(url: string, alt: string): number {
-  if (SKIP_PATTERNS.some((p) => p.test(url) || p.test(alt))) return -1;
+  if (IMAGE_SKIP_PATTERNS.some((p) => p.test(url) || p.test(alt))) return -1;
   let score = 0;
   if (PREFER_PATTERNS.some((p) => p.test(url) || p.test(alt))) score += 2;
   if (/large|full|xl|2000|1600|1200|original/i.test(url)) score += 2;
@@ -38,33 +59,147 @@ function scoreImage(url: string, alt: string): number {
   return score;
 }
 
-function extractCandidateImages(markdown: string): { url: string; alt: string }[] {
-  // 1. Open Graph image — most reliable, always the primary product image
+/** Resolve a potentially relative URL against a base page URL */
+function resolveUrl(href: string, baseUrl: string): string | null {
+  try {
+    return new URL(href, baseUrl).href;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Parse srcset string and return the URL for the highest-resolution entry.
+ * Handles both width descriptors (800w) and pixel density descriptors (2x).
+ */
+function highestResSrcset(srcset: string, baseUrl: string): string | null {
+  const entries = srcset
+    .split(",")
+    .map((entry) => entry.trim())
+    .filter(Boolean)
+    .map((entry) => {
+      const parts = entry.split(/\s+/);
+      const url = parts[0];
+      const descriptor = parts[1] ?? "1x";
+      const value = parseFloat(descriptor.replace(/[wx]/i, "")) || 1;
+      return { url, value };
+    });
+
+  if (entries.length === 0) return null;
+  entries.sort((a, b) => b.value - a.value);
+  return resolveUrl(entries[0].url, baseUrl);
+}
+
+/**
+ * Extract candidate product images from raw HTML.
+ * Checks data-* zoom/high-res attributes before falling back to src.
+ * Resolves relative URLs. Filters junk images. Deduplicates.
+ */
+function extractCandidateImagesFromHtml(
+  html: string,
+  baseUrl: string
+): { url: string; alt: string }[] {
+  const candidates: { url: string; alt: string; score: number }[] = [];
+  const seen = new Set<string>();
+
+  // 1. Open Graph image — always most reliable for the primary product shot
+  for (const [, ogUrl] of html.matchAll(
+    /<meta[^>]+(?:property|name)=["']og:image["'][^>]+content=["']([^"']+)["']/gi
+  )) {
+    const resolved = resolveUrl(ogUrl.trim(), baseUrl);
+    if (resolved) candidates.push({ url: resolved, alt: "og:image", score: 10 });
+  }
+  // Also catch reversed attribute order
+  for (const [, ogUrl] of html.matchAll(
+    /<meta[^>]+content=["']([^"']+)["'][^>]+(?:property|name)=["']og:image["']/gi
+  )) {
+    const resolved = resolveUrl(ogUrl.trim(), baseUrl);
+    if (resolved) candidates.push({ url: resolved, alt: "og:image", score: 10 });
+  }
+
+  // 2. All <img> tags — check high-res data attributes in priority order
+  for (const [imgTag] of html.matchAll(/<img[^>]+>/gi)) {
+    const getAttr = (name: string): string | null => {
+      const m = imgTag.match(new RegExp(`${name}=["']([^"']+)["']`, "i"));
+      return m ? m[1].trim() : null;
+    };
+
+    const alt = getAttr("alt") ?? "";
+
+    // Priority order for URL resolution
+    const rawUrl =
+      getAttr("data-zoom-image") ??
+      getAttr("data-full-size") ??
+      getAttr("data-large") ??
+      getAttr("data-src") ??
+      getAttr("data-lazy-src") ??
+      // srcset: pick highest resolution entry
+      (() => {
+        const srcset = getAttr("srcset");
+        return srcset ? highestResSrcset(srcset, baseUrl) : null;
+      })() ??
+      getAttr("src");
+
+    if (!rawUrl) continue;
+
+    // Skip data URIs
+    if (rawUrl.startsWith("data:")) continue;
+
+    const resolved = resolveUrl(rawUrl, baseUrl);
+    if (!resolved) continue;
+
+    const score = scoreImage(resolved, alt);
+    if (score < 0) continue;
+
+    candidates.push({ url: resolved, alt, score });
+  }
+
+  // Deduplicate by URL (ignoring query strings)
+  const deduped = candidates.filter(({ url }) => {
+    const key = url.split("?")[0];
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+
+  return deduped
+    .sort((a, b) => b.score - a.score)
+    .slice(0, 8)
+    .map(({ url, alt }) => ({ url, alt }));
+}
+
+/**
+ * Fallback image extractor from Markdown (used when no raw HTML is available).
+ */
+function extractCandidateImagesFromMarkdown(
+  markdown: string
+): { url: string; alt: string }[] {
+  const candidates: { url: string; alt: string; score: number }[] = [];
+
   const ogImages = [...markdown.matchAll(/og:image.*?(https?:\/\/[^\s"'<>)]+)/gi)].map(
     ([, url]) => ({ url: url.trim(), alt: "og:image", score: 10 })
   );
 
-  // 2. Markdown image syntax: ![alt](url)
-  const mdImages = [...markdown.matchAll(/!\[([^\]]*)\]\((https?:\/\/[^)]+)\)/g)].map(
-    ([, alt, url]) => ({ url, alt: alt ?? "", score: scoreImage(url, alt ?? "") })
-  );
+  const mdImages = [
+    ...markdown.matchAll(/!\[([^\]]*)\]\((https?:\/\/[^)]+)\)/g),
+  ].map(([, alt, url]) => ({ url, alt: alt ?? "", score: scoreImage(url, alt ?? "") }));
 
-  // 3. HTML img tags
-  const htmlImages = [...markdown.matchAll(/<img[^>]+src=["'](https?:\/\/[^"']+)["'][^>]*(?:alt=["']([^"']*)["'])?/gi)].map(
-    ([, url, alt]) => ({ url, alt: alt ?? "", score: scoreImage(url, alt ?? "") })
-  );
+  const htmlImages = [
+    ...markdown.matchAll(
+      /<img[^>]+src=["'](https?:\/\/[^"']+)["'][^>]*(?:alt=["']([^"']*)["'])?/gi
+    ),
+  ].map(([, url, alt]) => ({ url, alt: alt ?? "", score: scoreImage(url, alt ?? "") }));
 
   const all = [...ogImages, ...mdImages, ...htmlImages];
   const seen = new Set<string>();
-  const unique = all.filter(({ url }) => {
-    const clean = url.split("?")[0]; // dedupe ignoring query strings
-    if (seen.has(clean)) return false;
-    seen.add(clean);
-    return true;
-  });
-
-  return unique
-    .filter(({ score }) => score >= 0)
+  return all
+    .filter(({ url, score }) => {
+      if (score < 0) return false;
+      const key = url.split("?")[0];
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    })
     .sort((a, b) => b.score - a.score)
     .slice(0, 8)
     .map(({ url, alt }) => ({ url, alt }));
@@ -98,22 +233,26 @@ async function extractWithHaiku(
 
   const categoryList = categoryNames.length > 0 ? categoryNames.join(", ") : "none";
 
-  const fieldsList = fieldHints.length > 0
-    ? fieldHints.map((f) => `- ${f}`).join("\n")
-    : "- dimensions\n- material\n- finish\n- colour\n- weight\n- fire rating\n- lead time\n- country of origin";
+  const fieldsList =
+    fieldHints.length > 0
+      ? fieldHints.map((f) => `- ${f}`).join("\n")
+      : "- dimensions\n- material\n- finish\n- colour\n- weight\n- fire rating\n- lead time\n- country of origin";
 
-  const supplierHint = supplierNames.length > 0
-    ? `\nKnown suppliers/brands in this studio: ${supplierNames.join(", ")} — if the product brand matches one of these (case-insensitive), use the exact spelling from this list.`
-    : "";
+  const supplierHint =
+    supplierNames.length > 0
+      ? `\nKnown suppliers/brands in this studio: ${supplierNames.join(", ")} — if the product brand matches one of these (case-insensitive), use the exact spelling from this list.`
+      : "";
 
-  const prompt = `You are extracting structured product information from a supplier's page for an interior design spec library.
+  const systemPrompt = `You are extracting product data for an interior design procurement platform. Be conservative — if a field is ambiguous or absent, return null. Never infer or fabricate values.`;
+
+  const userPrompt = `Extract structured product information from the supplier page content below. Return ONLY valid JSON — no prose, no markdown fences.
 
 URL: ${url}
 
 Available spec categories in this studio: ${categoryList}
 ${supplierHint}
 
-Extract the following from the page content below. Return ONLY valid JSON:
+Required JSON shape:
 {
   "name": "product name",
   "brand": "brand/manufacturer name or null",
@@ -127,45 +266,69 @@ Extract the following from the page content below. Return ONLY valid JSON:
   "fields": [{ "label": "field name", "value": "field value" }]
 }
 
-For fields, extract values for THESE target fields. Use the EXACT label name shown (e.g. "Composition", not "Composition:"):
+--- FIELD EXTRACTION RULES ---
+
+Extract values for THESE specific fields. Use the EXACT label name shown:
 ${fieldsList}
 
-Important field extraction rules:
+General rules:
 - Match loosely: "Width (cm)", "Width:", "Fabric Width" → use label "Width"
-- Combine multi-line values into one string (e.g. pattern repeat horizontal + vertical)
-- Only include a field if its value is clearly stated on the page — do not guess
+- Combine multi-line values into one string (e.g. pattern repeat H + V)
+- Only include a field if its value is clearly stated on the page — if unsure, omit it
 - Search the ENTIRE page including tabs, accordions, and technical spec sections
 
-For cost: extract as number only (no currency symbols). Single price = cost_from only.
+Field-specific rules:
+- Martindale / Rub count: may appear as "Rub count: 30,000", "30k Martindale", or in a spec table under "Abrasion". Extract the number only (e.g. "30000").
+- Width: may appear in cm or inches (e.g. "140cm", "54\"", "54 inches"). ALWAYS convert to cm (1 inch = 2.54 cm). Store the result in cm and note the original unit in parentheses if it was inches — e.g. "137cm (54\")".
+- Composition / Content: may appear as "100% Polyester", "65% Wool 35% Nylon", or in a fibre breakdown table. Concatenate into one string.
+- Fire rating / Flame retardancy: look for "BS 5867", "Crib 5", "IMO", "EN 13501", or similar standards.
+- Lead time: may appear as "In stock", "4–6 weeks", "Made to order". Extract as-is.
+- Country of origin: may appear as "Made in Italy", "Origin: Belgium", or in a spec table.
+
+--- COST EXTRACTION RULES ---
+
+- Extract price as a number only (no currency symbols).
+- If you see a crossed-out original price next to a sale/current price, return the CURRENT (lower) selling price, not the original.
+- Single price = cost_from only (leave cost_to null).
+- Price range = cost_from (lower) and cost_to (upper).
+- If price is clearly per unit, per metre, per m², capture that in cost_unit.
 
 Page content:
 ${pageContent.slice(0, 25000)}`;
 
-  const response = await client.messages.create({
-    model: "claude-haiku-4-5-20251001",
-    max_tokens: 1024,
-    messages: [{ role: "user", content: prompt }],
-  });
+  let rawText = "";
+  try {
+    const response = await client.messages.create({
+      model: "claude-haiku-4-5-20251001",
+      max_tokens: 1024,
+      system: systemPrompt,
+      messages: [{ role: "user", content: userPrompt }],
+    });
 
-  const text = response.content[0].type === "text" ? response.content[0].text : "";
-  const jsonMatch = text.match(/```(?:json)?\s*([\s\S]*?)```/) ?? text.match(/(\{[\s\S]*\})/);
-  const jsonStr = jsonMatch ? jsonMatch[1] : text;
+    rawText = response.content[0].type === "text" ? response.content[0].text : "";
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    throw new Error(`Haiku API call failed: ${message}`);
+  }
+
+  // Strip markdown fences if present
+  const jsonMatch =
+    rawText.match(/```(?:json)?\s*([\s\S]*?)```/) ?? rawText.match(/(\{[\s\S]*\})/);
+  const jsonStr = jsonMatch ? jsonMatch[1] : rawText;
 
   try {
-    return JSON.parse(jsonStr.trim()) as ExtractedSpec;
-  } catch {
-    return {
-      name: "Unknown product",
-      brand: null,
-      description: null,
-      collection: null,
-      category_suggestion: categoryNames[0] ?? "Uncategorised",
-      cost_from: null,
-      cost_to: null,
-      cost_unit: null,
-      tags: [],
-      fields: [],
-    };
+    const parsed = JSON.parse(jsonStr.trim()) as ExtractedSpec;
+    return parsed;
+  } catch (parseErr) {
+    // Log the raw content to help diagnose prompt/model issues
+    console.error(
+      "[scrape-spec] JSON parse failed. Raw Haiku response:\n",
+      rawText.slice(0, 2000)
+    );
+    throw new Error(
+      `Extraction failed: Claude returned a response that could not be parsed as JSON. ` +
+        `Parse error: ${parseErr instanceof Error ? parseErr.message : String(parseErr)}`
+    );
   }
 }
 
@@ -183,17 +346,35 @@ export const scrapeSpecTool = (categoryNames: string[]) =>
       required: ["url"],
     }),
     execute: async ({ url }: { url: string }) => {
+      // Strip tracking params once — use the clean URL throughout
+      const cleanUrl = stripTrackingParams(url);
+
       // ── Check if already in the library ──────────────────────────────
+      // Check both source_url column (new) and legacy source: tag (old)
       try {
         const { createClient } = await import("@/lib/supabase/server");
         const { getCurrentStudioId } = await import("@/lib/studio-context");
         const supabase = await createClient();
         const studioId = await getCurrentStudioId();
         if (studioId) {
+          // Check source_url column first (preferred)
+          const { data: specByUrl } = await supabase
+            .from("specs")
+            .select("id, name")
+            .eq("studio_id", studioId)
+            .eq("source_url", cleanUrl)
+            .limit(1)
+            .single();
+
+          if (specByUrl) {
+            return { already_exists: true, spec_id: specByUrl.id, spec_name: specByUrl.name, spec_url: `/specs` };
+          }
+
+          // Fallback: legacy source: tag
           const { data: tagRow } = await supabase
             .from("spec_tags")
             .select("spec_id")
-            .eq("tag", `source:${url}`)
+            .eq("tag", `source:${cleanUrl}`)
             .limit(1)
             .single();
 
@@ -206,12 +387,7 @@ export const scrapeSpecTool = (categoryNames: string[]) =>
               .single();
 
             if (specRow) {
-              return {
-                already_exists: true,
-                spec_id: specRow.id,
-                spec_name: specRow.name,
-                spec_url: `/specs`,
-              };
+              return { already_exists: true, spec_id: specRow.id, spec_name: specRow.name, spec_url: `/specs` };
             }
           }
         }
@@ -220,15 +396,17 @@ export const scrapeSpecTool = (categoryNames: string[]) =>
       // ── Fetch the page ────────────────────────────────────────────────
       //
       // Strategy A — Firecrawl (preferred when API key is set):
-      //   Full browser rendering, handles JS tabs/accordions, returns clean markdown.
-      //   Doesn't use Readability so hidden tab content IS included.
+      //   Requests BOTH markdown (for LLM extraction) and html (for image harvesting).
+      //   waitFor: 2000 handles JS-rendered pages (tabs, accordions loading late).
+      //   onlyMainContent: false captures specs in sidebars and technical sections.
+      //   If markdown < 200 chars, treat as a failed scrape and fall through.
       //
-      // Strategy B — Jina Reader + raw HTML (fallback):
-      //   Jina gives clean markdown but strips CSS-hidden elements (Readability).
-      //   Raw HTML fetch captures everything including hidden tabs by stripping tags.
+      // Strategy B — Jina Reader + raw HTML fetch (fallback):
+      //   Jina gives clean markdown for text extraction.
+      //   Raw HTML fetch is used separately for image extraction.
 
       let markdown = "";
-      let htmlContent = "";
+      let rawHtml = "";  // used for image extraction
 
       const firecrawlKey = process.env.FIRECRAWL_API_KEY;
 
@@ -243,8 +421,9 @@ export const scrapeSpecTool = (categoryNames: string[]) =>
             },
             body: JSON.stringify({
               url,
-              formats: ["markdown"],
-              onlyMainContent: false,   // include tabs, sidebars, technical sections
+              formats: ["markdown", "html"],
+              onlyMainContent: false,  // include tabs, sidebars, technical sections
+              waitFor: 2000,           // allow JS-rendered content to load
               timeout: 30000,
             }),
             signal: AbortSignal.timeout(35000),
@@ -253,11 +432,18 @@ export const scrapeSpecTool = (categoryNames: string[]) =>
           if (fcRes.ok) {
             const fcData = await fcRes.json() as {
               success: boolean;
-              data?: { markdown?: string; metadata?: { ogImage?: string } };
+              data?: { markdown?: string; html?: string; metadata?: { ogImage?: string } };
             };
-            markdown = fcData.data?.markdown ?? "";
+            const fcMarkdown = fcData.data?.markdown ?? "";
+            const fcHtml = fcData.data?.html ?? "";
+
+            // Treat very short markdown as a failed scrape — fall through to Jina
+            if (fcMarkdown.length >= 200) {
+              markdown = fcMarkdown;
+              rawHtml = fcHtml;
+            }
           }
-        } catch { /* fall through to fallback below */ }
+        } catch { /* fall through to Jina fallback below */ }
       }
 
       if (!markdown) {
@@ -289,47 +475,56 @@ export const scrapeSpecTool = (categoryNames: string[]) =>
         }
 
         if (htmlRes.status === "fulfilled" && htmlRes.value.ok) {
-          const rawHtml = await htmlRes.value.text();
-
-          const jsonLdBlocks = [
-            ...rawHtml.matchAll(
-              /<script[^>]*type=["']application\/ld\+json["'][^>]*>([\s\S]*?)<\/script>/gi
-            ),
-          ]
-            .map(([, json]) => json.trim())
-            .join("\n");
-
-          const strippedText = rawHtml
-            .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, " ")
-            .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, " ")
-            .replace(/<!--[\s\S]*?-->/g, " ")
-            .replace(/<[^>]+>/g, " ")
-            .replace(/&nbsp;/g, " ")
-            .replace(/&amp;/g, "&")
-            .replace(/&lt;/g, "<")
-            .replace(/&gt;/g, ">")
-            .replace(/\s{2,}/g, " ")
-            .trim();
-
-          htmlContent = [
-            jsonLdBlocks ? `=== Structured data (JSON-LD) ===\n${jsonLdBlocks}` : "",
-            `=== Full page text (includes hidden tabs) ===\n${strippedText.slice(0, 12000)}`,
-          ]
-            .filter(Boolean)
-            .join("\n\n");
+          rawHtml = await htmlRes.value.text();
         }
       }
 
-      if (!markdown && !htmlContent) {
+      // ── Build LLM page content from raw HTML ──────────────────────────
+      // For the LLM we strip HTML tags to get clean text, and include JSON-LD.
+      // Images are extracted separately from rawHtml below.
+      let htmlTextContent = "";
+      if (rawHtml) {
+        const jsonLdBlocks = [
+          ...rawHtml.matchAll(
+            /<script[^>]*type=["']application\/ld\+json["'][^>]*>([\s\S]*?)<\/script>/gi
+          ),
+        ]
+          .map(([, json]) => json.trim())
+          .join("\n");
+
+        const strippedText = rawHtml
+          .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, " ")
+          .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, " ")
+          .replace(/<!--[\s\S]*?-->/g, " ")
+          .replace(/<[^>]+>/g, " ")
+          .replace(/&nbsp;/g, " ")
+          .replace(/&amp;/g, "&")
+          .replace(/&lt;/g, "<")
+          .replace(/&gt;/g, ">")
+          .replace(/\s{2,}/g, " ")
+          .trim();
+
+        htmlTextContent = [
+          jsonLdBlocks ? `=== Structured data (JSON-LD) ===\n${jsonLdBlocks}` : "",
+          `=== Full page text (includes hidden tabs) ===\n${strippedText.slice(0, 12000)}`,
+        ]
+          .filter(Boolean)
+          .join("\n\n");
+      }
+
+      if (!markdown && !htmlTextContent) {
         return { error: "Could not fetch that page — it may be blocking automated access." };
       }
-      if (markdown.length < 100 && htmlContent.length < 100) {
-        return { error: "The page didn't return enough content. It may require a login or be blocking access." };
+      if (markdown.length < 100 && htmlTextContent.length < 100) {
+        return {
+          error:
+            "The page didn't return enough content. It may require a login or be blocking access.",
+        };
       }
 
       // ── Fetch studio context: template fields + contact companies ─────
       type TemplateField = { id: string; template_id: string; name: string; ai_hint: string | null };
-      type ContactCompany = { id: string; name: string };
+      type ContactCompany = { id: string; name: string; website: string | null };
       let templateFieldsList: TemplateField[] = [];
       let contactCompaniesList: ContactCompany[] = [];
 
@@ -339,7 +534,6 @@ export const scrapeSpecTool = (categoryNames: string[]) =>
         const supabase = await createClient();
         const sid = await getCurrentStudioId();
         if (sid) {
-          // First get template IDs for this studio (security: don't fetch other studios' fields)
           const { data: studioTemplates } = await supabase
             .from("spec_templates")
             .select("id")
@@ -357,7 +551,7 @@ export const scrapeSpecTool = (categoryNames: string[]) =>
               : Promise.resolve({ data: [] as TemplateField[] }),
             supabase
               .from("contact_companies")
-              .select("id, name")
+              .select("id, name, website")
               .eq("studio_id", sid),
           ]);
 
@@ -366,22 +560,32 @@ export const scrapeSpecTool = (categoryNames: string[]) =>
         }
       } catch { /* non-critical */ }
 
-      // ── Extract data via Haiku ────────────────────────────────────────
-      // Images come from Jina markdown (has proper URLs); text content is combined.
-      const images = extractCandidateImages(markdown);
+      // ── Extract candidate images from raw HTML ────────────────────────
+      // Prefer HTML (has high-res data-* attributes and srcset); fall back to markdown.
+      const images = rawHtml
+        ? extractCandidateImagesFromHtml(rawHtml, url)
+        : extractCandidateImagesFromMarkdown(markdown);
+
+      // ── Extract spec data via Haiku ───────────────────────────────────
+      // Combined page content: Markdown first (better prose), then HTML stripped text
+      // (better for specs hidden in tabs/accordions).
       const uniqueFieldNames = [...new Set(templateFieldsList.map((f) => f.name))];
       const supplierNames = contactCompaniesList.map((c) => c.name);
 
-      // Combined page content: Jina markdown first (better for name/desc/cost),
-      // then HTML-extracted text (better for technical specs in hidden tabs).
       const pageContent = [
         markdown ? `=== Main page content ===\n${markdown.slice(0, 15000)}` : "",
-        htmlContent,
+        htmlTextContent,
       ]
         .filter(Boolean)
         .join("\n\n");
 
-      const spec = await extractWithHaiku(pageContent, url, categoryNames, uniqueFieldNames, supplierNames);
+      const spec = await extractWithHaiku(
+        pageContent,
+        url,
+        categoryNames,
+        uniqueFieldNames,
+        supplierNames
+      );
 
       // ── Resolve category_id, field_values, supplier_id server-side ───
       let category_id: string | null = null;
@@ -396,7 +600,7 @@ export const scrapeSpecTool = (categoryNames: string[]) =>
         if (studioId && spec.category_suggestion) {
           const { data: categories } = await supabase
             .from("spec_categories")
-            .select("id, name, template_id")
+            .select("id, name, template_id, parent_id")
             .eq("studio_id", studioId)
             .eq("is_active", true);
 
@@ -404,10 +608,13 @@ export const scrapeSpecTool = (categoryNames: string[]) =>
             (c) => c.name.toLowerCase() === spec.category_suggestion.toLowerCase()
           );
           category_id = catMatch?.id ?? null;
-          const template_id = catMatch?.template_id ?? null;
+          // Walk up to parent if sub-category has no template (e.g. Seating → Furniture)
+          const template_id =
+            catMatch?.template_id ??
+            (catMatch?.parent_id
+              ? (categories?.find((c) => c.id === catMatch.parent_id)?.template_id ?? null)
+              : null);
 
-          // Match extracted fields to template field IDs.
-          // Uses fuzzy matching so "Width (cm)" → "Width", "Martindale:" → "Martindale" etc.
           if (template_id && spec.fields.length > 0) {
             const catFields = templateFieldsList.filter((f) => f.template_id === template_id);
             for (const extracted of spec.fields) {
@@ -423,7 +630,6 @@ export const scrapeSpecTool = (categoryNames: string[]) =>
                 );
               });
               if (fieldMatch && extracted.value?.trim()) {
-                // Avoid duplicate field_ids (keep the first match)
                 if (!field_values.some((fv) => fv.field_id === fieldMatch.id)) {
                   field_values.push({
                     field_id: fieldMatch.id,
@@ -435,16 +641,54 @@ export const scrapeSpecTool = (categoryNames: string[]) =>
             }
           }
 
-          // Match brand to a known contact company
-          if (spec.brand) {
-            const supMatch = contactCompaniesList.find(
+          // ── Supplier resolution: domain match → brand name match → auto-create ──
+          //
+          // 1. Extract the hostname from the scraped URL (e.g. "johnlewis.com")
+          // 2. Check if any existing company's website matches that domain
+          // 3. Fall back to exact brand-name match
+          // 4. If still nothing but we have a brand name, create a new company
+          //    automatically so the spec is never left orphaned
+          let urlDomain: string | null = null;
+          try { urlDomain = new URL(url).hostname.replace(/^www\./, ""); } catch { /* ignore */ }
+
+          const domainMatch = urlDomain
+            ? contactCompaniesList.find((c) => {
+                if (!c.website) return false;
+                try {
+                  const companyDomain = new URL(
+                    c.website.startsWith("http") ? c.website : `https://${c.website}`
+                  ).hostname.replace(/^www\./, "");
+                  return companyDomain === urlDomain;
+                } catch { return false; }
+              })
+            : null;
+
+          if (domainMatch) {
+            supplier_id = domainMatch.id;
+          } else if (spec.brand) {
+            // Exact brand-name match (case-insensitive)
+            const brandMatch = contactCompaniesList.find(
               (c) => c.name.toLowerCase() === spec.brand!.toLowerCase()
             );
-            supplier_id = supMatch?.id ?? null;
+            if (brandMatch) {
+              supplier_id = brandMatch.id;
+            } else if (studioId) {
+              // Auto-create the company so the spec is always linked
+              const { data: newCompany } = await supabase
+                .from("contact_companies")
+                .insert({
+                  studio_id: studioId,
+                  name: spec.brand,
+                  website: urlDomain ? `https://${urlDomain}` : null,
+                })
+                .select("id")
+                .single();
+              supplier_id = newCompany?.id ?? null;
+            }
           }
         }
       } catch { /* non-critical */ }
 
-      return { ...spec, category_id, source_url: url, images, field_values, supplier_id };
+      return { ...spec, category_id, source_url: cleanUrl, images, field_values, supplier_id };
     },
   });

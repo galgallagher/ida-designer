@@ -9,8 +9,9 @@
  */
 
 import { useEffect, useState } from "react";
+import { createPortal } from "react-dom";
 import Link from "next/link";
-import { X, ExternalLink, Tag, Package, Pencil, ArrowRight, Trash2 } from "lucide-react";
+import { X, ExternalLink, Package, Pencil, ArrowRight, Trash2 } from "lucide-react";
 import { getSpecDetail, deleteSpec, type SpecDetailData } from "./actions";
 import { Dialog, DialogContent } from "@/components/ui/dialog";
 
@@ -25,11 +26,14 @@ export default function SpecDetailModal({ specId, onClose }: Props) {
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
+  const [lightboxOpen, setLightboxOpen] = useState(false);
+
 
   // Fetch data whenever specId changes; reset delete state on open/close
   useEffect(() => {
     setConfirmDelete(false);
     setDeleteError(null);
+    setLightboxOpen(false);
     if (!specId) {
       setData(null);
       return;
@@ -60,10 +64,59 @@ export default function SpecDetailModal({ specId, onClose }: Props) {
     ? new Date(spec.created_at).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })
     : "";
 
+  // Lightbox — portalled to document.body so it escapes the Dialog's CSS transform
+  const lightbox = lightboxOpen && spec?.image_url
+    ? createPortal(
+        <div
+          onClick={(e) => { e.stopPropagation(); setLightboxOpen(false); }}
+          onPointerDown={(e) => e.nativeEvent.stopImmediatePropagation()}
+          style={{
+            position: "fixed", inset: 0, zIndex: 9999,
+            backgroundColor: "rgba(0,0,0,0.88)",
+            display: "flex", alignItems: "center", justifyContent: "center",
+            cursor: "zoom-out",
+          }}
+        >
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src={spec.image_url}
+            alt={spec.name}
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              maxWidth: "90vw",
+              maxHeight: "90vh",
+              width: "auto",
+              height: "auto",
+              display: "block",
+              borderRadius: 12,
+              boxShadow: "0 24px 80px rgba(0,0,0,0.5)",
+              cursor: "default",
+            }}
+          />
+          <button
+            onClick={() => setLightboxOpen(false)}
+            style={{
+              position: "fixed", top: 20, right: 20,
+              background: "rgba(255,255,255,0.15)", border: "none",
+              borderRadius: "50%", width: 36, height: 36,
+              display: "flex", alignItems: "center", justifyContent: "center",
+              cursor: "pointer", color: "#FFFFFF",
+            }}
+          >
+            <X size={18} />
+          </button>
+        </div>,
+        document.body
+      )
+    : null;
+
   return (
+    <>
+    {lightbox}
     <Dialog open={!!specId} onOpenChange={(open) => { if (!open) onClose(); }}>
       <DialogContent
         className="[&>button:last-child]:hidden"
+        onEscapeKeyDown={(e) => { if (lightboxOpen) { e.preventDefault(); setLightboxOpen(false); } }}
         style={{
           maxWidth: 800,
           maxHeight: "calc(100vh - 48px)",
@@ -193,37 +246,29 @@ export default function SpecDetailModal({ specId, onClose }: Props) {
 
               {/* ── Left column: image + meta ── */}
               <div style={{ width: 200, flexShrink: 0 }}>
-                <div
+                <button
+                  type="button"
+                  onClick={() => spec?.image_url && setLightboxOpen(true)}
                   style={{
-                    width: 200, height: 200, borderRadius: 14,
+                    width: 200, height: 200, borderRadius: 14, padding: 0, border: "none",
                     backgroundColor: "#F0EEEB",
-                    backgroundImage: spec?.image_url ? `url(${spec.image_url})` : undefined,
-                    backgroundSize: "cover", backgroundPosition: "center",
                     display: "flex", alignItems: "center", justifyContent: "center",
                     boxShadow: "0 2px 12px rgba(26,26,26,0.08)",
+                    cursor: spec?.image_url ? "zoom-in" : "default",
+                    overflow: "hidden",
                   }}
                 >
-                  {!spec?.image_url && <Package size={32} style={{ color: "#D4D2CF" }} />}
-                </div>
-
-                {/* Tags */}
-                {(tags ?? []).length > 0 && (
-                  <div className="flex flex-wrap gap-1 mt-3">
-                    {tags!.filter((t) => !t.startsWith("source:")).map((tag) => (
-                      <span
-                        key={tag}
-                        className="flex items-center gap-1 px-2 py-0.5"
-                        style={{
-                          backgroundColor: "#F0EEEB", borderRadius: 6,
-                          fontFamily: "var(--font-inter), sans-serif",
-                          fontSize: 10, color: "#9A9590",
-                        }}
-                      >
-                        <Tag size={8} />{tag}
-                      </span>
-                    ))}
-                  </div>
-                )}
+                  {spec?.image_url ? (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img
+                      src={spec.image_url}
+                      alt={spec.name}
+                      style={{ width: "100%", height: "100%", objectFit: "contain", display: "block" }}
+                    />
+                  ) : (
+                    <Package size={32} style={{ color: "#D4D2CF" }} />
+                  )}
+                </button>
 
                 {/* Date */}
                 {createdDate && (
@@ -232,11 +277,32 @@ export default function SpecDetailModal({ specId, onClose }: Props) {
                   </p>
                 )}
 
+                {/* Product page link */}
+                {spec?.source_url && (
+                  <a
+                    href={spec.source_url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-1.5 transition-opacity hover:opacity-70 mt-3"
+                    style={{
+                      padding: "5px 12px",
+                      borderRadius: 8,
+                      border: "1px solid #E4E1DC",
+                      backgroundColor: "#FFFFFF",
+                      fontFamily: "var(--font-inter), sans-serif",
+                      fontSize: 12, fontWeight: 500, color: "#1A1A1A",
+                      textDecoration: "none", display: "inline-flex",
+                    }}
+                  >
+                    View product <ExternalLink size={10} />
+                  </a>
+                )}
+
                 {/* Open full page link */}
                 {spec && (
                   <Link
                     href={`/specs/${spec.id}`}
-                    className="flex items-center gap-1 mt-4 transition-opacity hover:opacity-60"
+                    className="flex items-center gap-1 mt-3 transition-opacity hover:opacity-60"
                     style={{
                       fontFamily: "var(--font-inter), sans-serif",
                       fontSize: 11, color: "#C0BEBB", textDecoration: "none",
@@ -364,21 +430,34 @@ export default function SpecDetailModal({ specId, onClose }: Props) {
                           <p style={{ fontFamily: "var(--font-inter), sans-serif", fontSize: 12, fontWeight: 600, color: "#1A1A1A" }}>
                             {sup.name}
                           </p>
-                          <div className="flex items-center gap-3 mt-0.5" style={{ fontFamily: "var(--font-inter), sans-serif", fontSize: 11, color: "#9A9590" }}>
-                            {sup.supplier_code && <span>Code: {sup.supplier_code}</span>}
-                            {sup.unit_cost && <span>£{sup.unit_cost} / unit</span>}
-                            {sup.website && (
-                              <a
-                                href={sup.website}
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                className="flex items-center gap-0.5 hover:underline"
-                                style={{ color: "#9A9590" }}
-                              >
-                                Website <ExternalLink size={8} />
-                              </a>
-                            )}
-                          </div>
+                          {(sup.supplier_code || sup.unit_cost) && (
+                            <div className="flex items-center gap-3 mt-0.5" style={{ fontFamily: "var(--font-inter), sans-serif", fontSize: 11, color: "#9A9590" }}>
+                              {sup.supplier_code && <span>Code: {sup.supplier_code}</span>}
+                              {sup.unit_cost && <span>£{sup.unit_cost} / unit</span>}
+                            </div>
+                          )}
+                          {sup.website && (
+                            <a
+                              href={sup.website}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="inline-flex items-center gap-1.5 transition-opacity hover:opacity-70"
+                              style={{
+                                marginTop: 8,
+                                padding: "5px 12px",
+                                borderRadius: 8,
+                                border: "1px solid #E4E1DC",
+                                backgroundColor: "#FFFFFF",
+                                fontFamily: "var(--font-inter), sans-serif",
+                                fontSize: 12,
+                                fontWeight: 500,
+                                color: "#1A1A1A",
+                                textDecoration: "none",
+                              }}
+                            >
+                              Visit website <ExternalLink size={10} />
+                            </a>
+                          )}
                         </div>
                       ))}
                     </div>
@@ -426,5 +505,6 @@ export default function SpecDetailModal({ specId, onClose }: Props) {
         </div>
       </DialogContent>
     </Dialog>
+    </>
   );
 }

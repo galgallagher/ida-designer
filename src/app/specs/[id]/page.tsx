@@ -8,7 +8,7 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
-import { ArrowLeft, ExternalLink, Tag, Package, Pencil } from "lucide-react";
+import { ArrowLeft, ExternalLink, Package, Pencil } from "lucide-react";
 import AppShell from "@/components/AppShell";
 import DeleteSpecButton from "./DeleteSpecButton";
 import type { SpecRow } from "@/types/database";
@@ -101,21 +101,14 @@ export default async function SpecDetailPage({ params }: PageProps) {
         <div className="flex-shrink-0" style={{ width: 280 }}>
           <div
             className="flex items-center justify-center"
-            style={{ width: 280, height: 280, borderRadius: 14, backgroundColor: "#F0EEEB", backgroundImage: spec.image_url ? `url(${spec.image_url})` : undefined, backgroundSize: "cover", backgroundPosition: "center", boxShadow: "0 2px 12px rgba(26,26,26,0.08)" }}
+            style={{ width: 280, height: 280, borderRadius: 14, backgroundColor: "#F0EEEB", overflow: "hidden", boxShadow: "0 2px 12px rgba(26,26,26,0.08)" }}
           >
-            {!spec.image_url && <Package size={40} style={{ color: "#D4D2CF" }} />}
+            {spec.image_url
+              // eslint-disable-next-line @next/next/no-img-element
+              ? <img src={spec.image_url} alt={spec.name} style={{ width: "100%", height: "100%", objectFit: "contain", display: "block" }} />
+              : <Package size={40} style={{ color: "#D4D2CF" }} />
+            }
           </div>
-
-          {/* Tags */}
-          {tags.length > 0 && (
-            <div className="flex flex-wrap gap-1.5 mt-4">
-              {tags.filter((t) => !t.startsWith("source:")).map((tag) => (
-                <span key={tag} className="flex items-center gap-1 px-2.5 py-1" style={{ backgroundColor: "#F0EEEB", borderRadius: 6, fontFamily: "var(--font-inter), sans-serif", fontSize: 11, color: "#9A9590" }}>
-                  <Tag size={9} />{tag}
-                </span>
-              ))}
-            </div>
-          )}
 
           {/* Meta */}
           <div className="mt-4" style={{ fontFamily: "var(--font-inter), sans-serif", fontSize: 11, color: "#C0BEBB" }}>

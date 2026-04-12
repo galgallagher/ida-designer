@@ -10,6 +10,8 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { getCurrentStudioId } from "@/lib/studio-context";
+import { extractVisualTags } from "@/lib/ida/extract-visual-tags";
+import { resolveTemplateId } from "@/lib/ida/resolve-template";
 
 export async function POST(req: Request) {
   const supabase = await createClient();
@@ -26,7 +28,7 @@ export async function POST(req: Request) {
     cost_unit: string | null;
     tags: string[];
     source_url: string | null;
-    field_values: { field_id: string; label: string; value: string }[] | null;
+    field_values: { field_id: string; value: string }[] | null;
     supplier_id: string | null;
   };
 
@@ -34,39 +36,7 @@ export async function POST(req: Request) {
   if (!studioId) return NextResponse.json({ error: "No studio context" }, { status: 400 });
 
   // ── Resolve template ───────────────────────────────────────────────────────
-  // Prefer the category's own template (so template fields match correctly).
-  // Fall back to the first active studio template; create "General" if none exist.
-  let templateId: string | null = null;
-
-  if (body.category_id) {
-    const { data: catData } = await supabase
-      .from("spec_categories")
-      .select("template_id")
-      .eq("id", body.category_id)
-      .single();
-    templateId = catData?.template_id ?? null;
-  }
-
-  if (!templateId) {
-    const { data: templates } = await supabase
-      .from("spec_templates")
-      .select("id")
-      .eq("studio_id", studioId)
-      .eq("is_active", true)
-      .order("created_at", { ascending: true })
-      .limit(1);
-    templateId = templates?.[0]?.id ?? null;
-  }
-
-  if (!templateId) {
-    const { data: t } = await supabase
-      .from("spec_templates")
-      .insert({ studio_id: studioId, name: "General", is_active: true })
-      .select("id")
-      .single();
-    templateId = t?.id ?? null;
-  }
-
+  const templateId = await resolveTemplateId(supabase, studioId, body.category_id ?? null);
   if (!templateId) return NextResponse.json({ error: "No template" }, { status: 500 });
 
   // ── Insert spec ────────────────────────────────────────────────────────────
@@ -79,6 +49,7 @@ export async function POST(req: Request) {
       name: body.name,
       description: body.description ?? null,
       image_url: body.image_url ?? null,
+      source_url: body.source_url ?? null,
       cost_from: body.cost_from ?? null,
       cost_to: body.cost_to ?? null,
       cost_unit: body.cost_unit ?? null,
@@ -88,8 +59,9 @@ export async function POST(req: Request) {
 
   if (error || !spec) return NextResponse.json({ error: error?.message }, { status: 500 });
 
-  // ── Tags ───────────────────────────────────────────────────────────────────
-  const tags = [...(body.tags ?? [])];
+  // ── Tags (including visual tags from image analysis) ──────────────────────
+  const visualTags = body.image_url ? await extractVisualTags(body.image_url) : [];
+  const tags = [...(body.tags ?? []), ...visualTags];
   if (body.source_url) tags.push(`source:${body.source_url}`);
   if (tags.length > 0) {
     await supabase.from("spec_tags").insert(tags.map((tag) => ({ spec_id: spec.id, tag })));
