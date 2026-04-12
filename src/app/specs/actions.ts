@@ -262,7 +262,7 @@ export async function updateSpec(specId: string, formData: FormData): Promise<Up
 export interface SpecDetailData {
   spec: {
     id: string; name: string; description: string | null; image_url: string | null;
-    source_url: string | null; template_id: string; category_id: string | null;
+    source_url: string | null; global_spec_id: string | null; template_id: string; category_id: string | null;
     cost_from: number | null; cost_to: number | null; cost_unit: string | null; created_at: string;
   };
   category: { id: string; name: string } | null;
@@ -316,13 +316,21 @@ export async function getSpecDetail(id: string): Promise<SpecDetailData | null> 
     });
   }
 
-  // Projects
+  // Projects — join through project_options for new rows; fall back to direct project_id for legacy rows
   const { data: projectSpecData } = await supabase
-    .from("project_specs").select("project_id").eq("spec_id", id);
-  const projectIds = (projectSpecData ?? []).map((p) => p.project_id);
+    .from("project_specs")
+    .select("project_id, project_option_id")
+    .eq("spec_id", id);
+
+  // Collect unique project IDs from both the legacy column and the new option join
+  const directProjectIds = (projectSpecData ?? [])
+    .map((p) => p.project_id)
+    .filter(Boolean) as string[];
+  const uniqueProjectIds = [...new Set(directProjectIds)];
+
   let projects: SpecDetailData["projects"] = [];
-  if (projectIds.length > 0) {
-    const { data: projData } = await supabase.from("projects").select("id, name, code").in("id", projectIds);
+  if (uniqueProjectIds.length > 0) {
+    const { data: projData } = await supabase.from("projects").select("id, name, code").in("id", uniqueProjectIds);
     projects = projData ?? [];
   }
 
@@ -330,6 +338,7 @@ export async function getSpecDetail(id: string): Promise<SpecDetailData | null> 
     spec: {
       id: spec.id, name: spec.name, description: spec.description ?? null,
       image_url: spec.image_url ?? null, source_url: spec.source_url ?? null,
+      global_spec_id: spec.global_spec_id ?? null,
       template_id: spec.template_id, category_id: spec.category_id ?? null,
       cost_from: spec.cost_from ?? null, cost_to: spec.cost_to ?? null,
       cost_unit: spec.cost_unit ?? null, created_at: spec.created_at,

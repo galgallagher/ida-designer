@@ -46,11 +46,26 @@ export default async function ProjectOverviewPage({ params }: PageProps) {
 
   const client = clientData;
 
-  // Count drawings, specs, and team members
-  const [{ count: drawingCount }, { count: specCount }, { count: teamCount }] = await Promise.all([
-    supabase.from("drawings").select("*", { count: "exact", head: true }).eq("project_id", id),
-    supabase.from("project_specs").select("*", { count: "exact", head: true }).eq("project_id", id),
+  // Count drawings, specs, and team members.
+  // Drawings and project_specs now belong to project_options, so we count
+  // via the project_options junction. Legacy project_id columns kept during
+  // transition — both paths work until migration 033 (cleanup) runs.
+  const [optionIds, { count: teamCount }] = await Promise.all([
+    supabase
+      .from("project_options")
+      .select("id")
+      .eq("project_id", id)
+      .then(({ data }) => (data ?? []).map((o) => o.id)),
     supabase.from("project_members").select("*", { count: "exact", head: true }).eq("project_id", id),
+  ]);
+
+  const [{ count: drawingCount }, { count: specCount }] = await Promise.all([
+    optionIds.length > 0
+      ? supabase.from("drawings").select("*", { count: "exact", head: true }).in("project_option_id", optionIds)
+      : Promise.resolve({ count: 0 }),
+    optionIds.length > 0
+      ? supabase.from("project_specs").select("*", { count: "exact", head: true }).in("project_option_id", optionIds)
+      : Promise.resolve({ count: 0 }),
   ]);
 
   const status = statusConfig[project.status] ?? statusConfig.archived;

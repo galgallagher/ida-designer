@@ -349,15 +349,66 @@ export const scrapeSpecTool = (categoryNames: string[]) =>
       // Strip tracking params once — use the clean URL throughout
       const cleanUrl = stripTrackingParams(url);
 
-      // ── Check if already in the library ──────────────────────────────
-      // Check both source_url column (new) and legacy source: tag (old)
+      // ── Step 1: Check global library first (cross-studio dedup) ─────────
+      // If ANY studio has ever scraped this URL, the data lives in global_specs.
+      // We can skip the network scrape entirely and return the cached data.
       try {
         const { createClient } = await import("@/lib/supabase/server");
         const { getCurrentStudioId } = await import("@/lib/studio-context");
         const supabase = await createClient();
         const studioId = await getCurrentStudioId();
+
         if (studioId) {
-          // Check source_url column first (preferred)
+          // 1a. Has any studio scraped this URL before?
+          const { data: globalSpec } = await supabase
+            .from("global_specs")
+            .select("id, name, brand_name, brand_domain, description, image_url, cost_from, cost_to, cost_unit, category_hint")
+            .eq("source_url", cleanUrl)
+            .limit(1)
+            .single();
+
+          if (globalSpec) {
+            // 1b. Has THIS studio already pinned it?
+            const { data: studioSpec } = await supabase
+              .from("specs")
+              .select("id, name")
+              .eq("studio_id", studioId)
+              .eq("global_spec_id", globalSpec.id)
+              .limit(1)
+              .single();
+
+            if (studioSpec) {
+              return { already_exists: true, spec_id: studioSpec.id, spec_name: studioSpec.name, spec_url: `/specs` };
+            }
+
+            // 1c. New to this studio — load global fields and return for pinning.
+            // No network scrape needed.
+            const { data: globalFields } = await supabase
+              .from("global_spec_fields")
+              .select("label, value, sort_order")
+              .eq("global_spec_id", globalSpec.id)
+              .order("sort_order");
+
+            return {
+              from_global: true as const,
+              global_spec_id: globalSpec.id,
+              name: globalSpec.name,
+              brand: globalSpec.brand_name,
+              description: globalSpec.description,
+              image_url: globalSpec.image_url,
+              cost_from: globalSpec.cost_from,
+              cost_to: globalSpec.cost_to,
+              cost_unit: globalSpec.cost_unit,
+              category_hint: globalSpec.category_hint,
+              // Raw fields for display in Ida's chat and for pin-time template mapping
+              fields: (globalFields ?? []).map((f) => ({ label: f.label, value: f.value })),
+              source_url: cleanUrl,
+              brand_domain: globalSpec.brand_domain,
+            };
+          }
+
+          // ── Step 2: Not in global library — check studio-specific dedup ──
+          // Belt-and-braces: catches any race window or pre-026 migration specs
           const { data: specByUrl } = await supabase
             .from("specs")
             .select("id, name")
@@ -370,7 +421,7 @@ export const scrapeSpecTool = (categoryNames: string[]) =>
             return { already_exists: true, spec_id: specByUrl.id, spec_name: specByUrl.name, spec_url: `/specs` };
           }
 
-          // Fallback: legacy source: tag
+          // Fallback: legacy source: tag (pre-024 migration specs)
           const { data: tagRow } = await supabase
             .from("spec_tags")
             .select("spec_id")
@@ -689,6 +740,71 @@ export const scrapeSpecTool = (categoryNames: string[]) =>
         }
       } catch { /* non-critical */ }
 
-      return { ...spec, category_id, source_url: cleanUrl, images, field_values, supplier_id };
+      // ── Step 3: Write to global_specs after a fresh scrape ───────────
+      // Uses service_role client — global_specs requires service_role for writes.
+      // Non-blocking: wrapped in try/catch so a failed global write never blocks
+      // the studio from saving their spec.
+      let globalSpecId: string | null = null;
+      try {
+        const { createAdminClient } = await import("@/lib/supabase/server-admin");
+        const serviceSupabase = createAdminClient();
+
+        let urlDomainForGlobal: string | null = null;
+        try { urlDomainForGlobal = new URL(cleanUrl).hostname.replace(/^www\./, ""); } catch { /* ignore */ }
+
+        // ignoreDuplicates: true — first scrape wins; don't overwrite existing global data
+        const { data: upsertedGlobal } = await serviceSupabase
+          .from("global_specs")
+          .upsert(
+            {
+              source_url: cleanUrl,
+              name: spec.name,
+              brand_name: spec.brand ?? null,
+              brand_domain: urlDomainForGlobal,
+              description: spec.description ?? null,
+              image_url: images[0]?.url ?? null,
+              cost_from: spec.cost_from ?? null,
+              cost_to: spec.cost_to ?? null,
+              cost_unit: spec.cost_unit ?? null,
+              category_hint: spec.category_suggestion ?? null,
+            },
+            { onConflict: "source_url", ignoreDuplicates: true }
+          )
+          .select("id")
+          .single();
+
+        if (upsertedGlobal?.id) {
+          globalSpecId = upsertedGlobal.id;
+
+          // Write freeform fields (first scrape wins — DO NOTHING on conflict)
+          if (spec.fields.length > 0) {
+            await serviceSupabase
+              .from("global_spec_fields")
+              .upsert(
+                spec.fields
+                  .filter((f) => f.label?.trim() && f.value?.trim())
+                  .map((f, i) => ({
+                    global_spec_id: globalSpecId!,
+                    label: f.label.trim(),
+                    value: f.value.trim(),
+                    sort_order: i,
+                  })),
+                { onConflict: "global_spec_id,label", ignoreDuplicates: true }
+              );
+          }
+
+          // Write tags (DO NOTHING on conflict)
+          if (spec.tags.length > 0) {
+            await serviceSupabase
+              .from("global_spec_tags")
+              .upsert(
+                spec.tags.map((tag) => ({ global_spec_id: globalSpecId!, tag })),
+                { onConflict: "global_spec_id,tag", ignoreDuplicates: true }
+              );
+          }
+        }
+      } catch { /* non-critical — global write failure never blocks studio save */ }
+
+      return { ...spec, category_id, source_url: cleanUrl, images, field_values, supplier_id, global_spec_id: globalSpecId };
     },
   });
