@@ -8,7 +8,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { ArrowLeft, LayoutDashboard, ImageIcon, Package, Users, Settings } from "lucide-react";
+import { ArrowLeft, LayoutDashboard, ImageIcon, Package, Users, Settings, ClipboardList } from "lucide-react";
 import type { ProjectStatus } from "@/types/database";
 
 const statusConfig: Record<ProjectStatus, { dot: string; label: string }> = {
@@ -45,10 +45,11 @@ export default function ProjectNav({
 
   const sections: ProjectNavSection[] = [
     { label: "Overview",  href: base,                  icon: LayoutDashboard },
-    { label: "Drawings",  href: `${base}/drawings`,    icon: ImageIcon },
-    { label: "Specs",     href: `${base}/specs`,       icon: Package },
-    { label: "Team",      href: `${base}/team`,        icon: Users },
-    { label: "Settings",  href: `${base}/settings`,    icon: Settings, soon: true  },
+    { label: "Drawings",       href: `${base}/drawings`, icon: ImageIcon },
+    { label: "Project Library", href: `${base}/specs`,   icon: Package },
+    { label: "Specs",          href: `${base}/specs/schedule`, icon: ClipboardList, soon: true },
+    { label: "Team",           href: `${base}/team`,    icon: Users },
+    { label: "Settings",       href: `${base}/settings`, icon: Settings, soon: true },
   ];
 
   const status = statusConfig[projectStatus] ?? statusConfig.archived;

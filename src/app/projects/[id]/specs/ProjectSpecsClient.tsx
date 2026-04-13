@@ -184,7 +184,7 @@ export default function ProjectSpecsClient({
       <div className="flex items-start justify-between mb-8">
         <div>
           <h1 style={{ fontFamily: "var(--font-playfair), serif", fontSize: 26, fontWeight: 700, color: "#1A1A1A", marginBottom: 4 }}>
-            Specs
+            Project Library
           </h1>
           <p style={{ fontFamily: "var(--font-inter), sans-serif", fontSize: 13, color: "#9A9590" }}>
             {projectName}
@@ -256,7 +256,7 @@ export default function ProjectSpecsClient({
             No specs yet
           </p>
           <p style={{ fontFamily: "var(--font-inter), sans-serif", fontSize: 13, color: "#9A9590", marginBottom: 24, lineHeight: 1.6, maxWidth: 340 }}>
-            Add products and materials from your studio library to build the schedule for this project.
+            Add products and materials from your studio library to build the consideration list for this project.
           </p>
           <button
             type="button"
