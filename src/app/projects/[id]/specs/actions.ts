@@ -11,7 +11,7 @@
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { getCurrentStudioId } from "@/lib/studio-context";
-import type { SpecItemType, SpecStatus } from "@/types/database";
+import type { SpecStatus } from "@/types/database";
 
 // ── Shared guard ──────────────────────────────────────────────────────────────
 
@@ -87,7 +87,7 @@ export async function addSpecToProject(
   projectId: string,
   payload: {
     spec_id: string;
-    item_type: SpecItemType;
+    item_type: string;
     drawing_id?: string | null;
     notes?: string | null;
   }
@@ -156,7 +156,7 @@ export async function updateProjectSpec(
   projectSpecId: string,
   projectId: string,
   payload: {
-    item_type?: SpecItemType;
+    item_type?: string;
     drawing_id?: string | null;
     notes?: string | null;
     status?: SpecStatus;

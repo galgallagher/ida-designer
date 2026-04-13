@@ -1,28 +1,16 @@
 /**
  * Schedule Types — /settings/schedules
  *
- * Studio admins can control which spec schedule types appear in projects,
- * rename them with studio-specific labels, and reorder them.
- * Uses studio_spec_preferences (migration 030).
+ * Studios can hide, rename and reorder system schedule types, and create
+ * their own custom ones. Uses studio_spec_preferences as the source of truth.
  */
 
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { getCurrentStudioId } from "@/lib/studio-context";
 import AppShell from "@/components/AppShell";
-import SchedulesClient from "./SchedulesClient";
-import type { SpecItemType } from "@/types/database";
-
-// All schedule types the platform supports, with their default labels
-export const DEFAULT_SCHEDULE_TYPES: { type: SpecItemType; label: string }[] = [
-  { type: "ffe",             label: "FF&E" },
-  { type: "joinery",        label: "Joinery" },
-  { type: "ironmongery",    label: "Ironmongery" },
-  { type: "sanitaryware",   label: "Sanitaryware" },
-  { type: "arch_id_finishes", label: "Arch ID Finishes" },
-  { type: "joinery_finishes", label: "Joinery Finishes" },
-  { type: "ffe_finishes",   label: "FF&E Finishes" },
-];
+import SchedulesClient, { type ScheduleRow } from "./SchedulesClient";
+import { SYSTEM_SCHEDULES, SYSTEM_LABEL_MAP } from "@/lib/schedule-types";
 
 export default async function SchedulesPage() {
   const supabase = await createClient();
@@ -32,33 +20,46 @@ export default async function SchedulesPage() {
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) redirect("/login");
 
-  // Fetch existing preferences for this studio
-  const { data: prefsData } = await supabase
+  // studio_spec_preferences is the source of truth.
+  // If a studio hasn't customised yet, they have no rows — we fall back to defaults.
+  const { data: savedPrefs } = await supabase
     .from("studio_spec_preferences")
     .select("*")
     .eq("studio_id", studioId)
     .order("sort_order");
 
-  const savedPrefs = prefsData ?? [];
+  const prefs = savedPrefs ?? [];
 
-  // Merge defaults with saved prefs: if a type has been saved, use that;
-  // otherwise use the default (visible, default label, default order).
-  const prefMap = new Map(savedPrefs.map((p) => [p.item_type, p]));
+  // Build the full list:
+  // 1. Saved prefs first (in their saved order)
+  // 2. Any system types not yet saved (appended at end, visible by default)
+  const savedTypes = new Set(prefs.map((p) => p.item_type));
 
-  const mergedPrefs = DEFAULT_SCHEDULE_TYPES.map((def, index) => {
-    const saved = prefMap.get(def.type);
-    return {
-      item_type: def.type,
-      default_label: def.label,
-      display_name: saved?.display_name ?? null,
-      is_visible: saved?.is_visible ?? true,
-      sort_order: saved?.sort_order ?? index,
-    };
-  }).sort((a, b) => a.sort_order - b.sort_order);
+  const savedRows: ScheduleRow[] = prefs.map((p) => ({
+    item_type: p.item_type,
+    default_label: SYSTEM_LABEL_MAP.get(p.item_type) ?? null,
+    display_name: p.display_name,
+    is_visible: p.is_visible,
+    is_custom: p.is_custom,
+    sort_order: p.sort_order,
+  }));
+
+  const unsavedSystemRows: ScheduleRow[] = SYSTEM_SCHEDULES
+    .filter((s) => !savedTypes.has(s.type))
+    .map((s, i) => ({
+      item_type: s.type,
+      default_label: s.label,
+      display_name: null,
+      is_visible: true,
+      is_custom: false,
+      sort_order: prefs.length + i,
+    }));
+
+  const rows = [...savedRows, ...unsavedSystemRows];
 
   return (
     <AppShell>
-      <SchedulesClient preferences={mergedPrefs} />
+      <SchedulesClient initialRows={rows} />
     </AppShell>
   );
 }

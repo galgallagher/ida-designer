@@ -36,8 +36,11 @@ export type SpecStatus =
   | "delivered";
 // Drawing type — the three drawing categories used in design schedules (migration 029)
 export type DrawingType = "arch_id" | "joinery" | "ffe";
-// Spec item type — project-level schedule classification (migration 030)
-export type SpecItemType =
+// System-defined schedule type keys — the built-in schedule classifications.
+// After migration 034, item_type columns are text so custom studio schedules
+// (keyed by UUID) are also valid values. Use SystemSpecItemType where you
+// need exhaustive matching against known values only.
+export type SystemSpecItemType =
   | "ffe"
   | "ironmongery"
   | "sanitaryware"
@@ -45,6 +48,11 @@ export type SpecItemType =
   | "arch_id_finishes"
   | "joinery_finishes"
   | "ffe_finishes";
+
+// SpecItemType allows both system keys and custom UUID keys.
+// The (string & {}) intersection prevents TypeScript collapsing this to plain
+// string, preserving autocomplete on the known system values.
+export type SpecItemType = SystemSpecItemType | (string & {});
 
 // ── Row types — what you get back when you SELECT from a table ─────────────
 
@@ -284,7 +292,7 @@ export type ProjectSpecRow = {
   studio_id: string | null;            // new (migration 032) — denormalised for RLS
   spec_id: string;
   drawing_id: string | null;
-  item_type: SpecItemType | null;      // new (migration 032)
+  item_type: string | null;            // text after migration 034 (was spec_item_type enum)
   quantity: number | null;
   unit: string | null;
   notes: string | null;
@@ -383,10 +391,11 @@ export type DrawingFinishRow = {
 export type StudioSpecPreferenceRow = {
   id: string;
   studio_id: string;
-  item_type: SpecItemType;
+  item_type: string;             // text after migration 034 (was spec_item_type enum)
   is_visible: boolean;
-  display_name: string | null;   // optional studio label override
+  display_name: string | null;   // optional label override (or name for custom schedules)
   sort_order: number;
+  is_custom: boolean;            // true = studio-created; false = system default (migration 034)
   created_at: string;
   updated_at: string;
 };
