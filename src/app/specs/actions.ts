@@ -396,3 +396,97 @@ export async function deleteSpec(specId: string): Promise<{ error?: string }> {
   revalidatePath("/specs");
   return {};
 }
+
+// ── Get active projects for "Add to project" picker ───────────────────────────
+
+export async function getActiveProjects(): Promise<
+  { id: string; name: string; code: string | null }[]
+> {
+  const supabase = await createClient();
+  const studioId = await getCurrentStudioId();
+  if (!studioId) return [];
+
+  const { data } = await supabase
+    .from("projects")
+    .select("id, name, code")
+    .eq("studio_id", studioId)
+    .in("status", ["active", "on_hold"])
+    .order("name");
+
+  return data ?? [];
+}
+
+// ── Add spec to project library from the spec detail modal ────────────────────
+
+export async function addSpecToProjectFromLibrary(
+  specId: string,
+  projectId: string,
+  itemType: string
+): Promise<{ error: string | null }> {
+  const supabase = await createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return { error: "Not authenticated." };
+
+  const studioId = await getCurrentStudioId();
+  if (!studioId) return { error: "No studio found." };
+
+  // Verify spec belongs to this studio
+  const { data: spec } = await supabase
+    .from("specs").select("id").eq("id", specId).eq("studio_id", studioId).single();
+  if (!spec) return { error: "Spec not found." };
+
+  // Verify project belongs to this studio
+  const { data: project } = await supabase
+    .from("projects").select("id, studio_id").eq("id", projectId).eq("studio_id", studioId).single();
+  if (!project) return { error: "Project not found." };
+
+  // Resolve or create the default option for this project
+  let optionId: string | null = null;
+  const { data: existingOption } = await supabase
+    .from("project_options")
+    .select("id")
+    .eq("project_id", projectId)
+    .eq("is_default", true)
+    .single();
+
+  if (existingOption) {
+    optionId = existingOption.id;
+  } else {
+    const { data: anyOption } = await supabase
+      .from("project_options")
+      .select("id")
+      .eq("project_id", projectId)
+      .order("sort_order")
+      .limit(1)
+      .single();
+
+    if (anyOption) {
+      optionId = anyOption.id;
+    } else {
+      const { data: created } = await supabase
+        .from("project_options")
+        .insert({ studio_id: studioId, project_id: projectId, name: "Option A", label: "A", sort_order: 0, is_default: true })
+        .select("id")
+        .single();
+      optionId = created?.id ?? null;
+    }
+  }
+
+  if (!optionId) return { error: "Could not resolve project option." };
+
+  const { error: dbError } = await supabase.from("project_specs").insert({
+    project_id: projectId,
+    project_option_id: optionId,
+    studio_id: studioId,
+    spec_id: specId,
+    item_type: itemType,
+    status: "draft",
+  });
+
+  if (dbError) {
+    if (dbError.code === "23505") return { error: "Already in this project's library." };
+    return { error: dbError.message };
+  }
+
+  return { error: null };
+}
