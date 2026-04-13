@@ -48,7 +48,7 @@ export default function ProjectNav({
     { label: "Drawings",  href: `${base}/drawings`,    icon: ImageIcon },
     { label: "Specs",     href: `${base}/specs`,       icon: Package },
     { label: "Team",      href: `${base}/team`,        icon: Users },
-    { label: "Settings",  href: `${base}/settings`,    icon: Settings, soon: true },
+    { label: "Settings",  href: `${base}/settings`,    icon: Settings, soon: true  },
   ];
 
   const status = statusConfig[projectStatus] ?? statusConfig.archived;
