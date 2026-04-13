@@ -43,7 +43,8 @@ export type SpecItemType =
   | "sanitaryware"
   | "joinery"
   | "arch_id_finishes"
-  | "joinery_finishes";
+  | "joinery_finishes"
+  | "ffe_finishes";
 
 // ── Row types — what you get back when you SELECT from a table ─────────────
 

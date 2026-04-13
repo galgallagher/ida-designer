@@ -28,6 +28,7 @@ const ITEM_TYPE_ORDER: SpecItemType[] = [
   "sanitaryware",
   "arch_id_finishes",
   "joinery_finishes",
+  "ffe_finishes",
 ];
 
 const ITEM_TYPE_LABELS: Record<SpecItemType, string> = {
@@ -37,6 +38,7 @@ const ITEM_TYPE_LABELS: Record<SpecItemType, string> = {
   joinery: "Joinery",
   arch_id_finishes: "Arch ID Finishes",
   joinery_finishes: "Joinery Finishes",
+  ffe_finishes: "FF&E Finishes",
 };
 
 const STATUS_CONFIG: Record<SpecStatus, { bg: string; color: string; label: string }> = {
