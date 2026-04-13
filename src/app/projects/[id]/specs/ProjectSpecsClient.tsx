@@ -10,7 +10,6 @@
 
 import { useState, useTransition, useMemo } from "react";
 import { Plus, Package, Loader2, X } from "lucide-react";
-import Image from "next/image";
 import {
   Dialog,
   DialogContent,
@@ -322,7 +321,7 @@ export default function ProjectSpecsClient({
                         style={{ width: 40, height: 40, borderRadius: 8, backgroundColor: "#F0EEEB", overflow: "hidden" }}
                       >
                         {spec.image_url ? (
-                          <Image src={spec.image_url} alt={spec.name} width={40} height={40} style={{ objectFit: "cover", width: "100%", height: "100%" }} />
+                          <img src={spec.image_url} alt={spec.name} style={{ objectFit: "cover", width: "100%", height: "100%" }} />
                         ) : (
                           <Package size={16} style={{ color: "#C0BEBB" }} />
                         )}
@@ -350,7 +349,7 @@ export default function ProjectSpecsClient({
                   style={{ width: 36, height: 36, borderRadius: 8, backgroundColor: "#F0EEEB", overflow: "hidden" }}
                 >
                   {selectedSpec.image_url ? (
-                    <Image src={selectedSpec.image_url} alt={selectedSpec.name} width={36} height={36} style={{ objectFit: "cover", width: "100%", height: "100%" }} />
+                    <img src={selectedSpec.image_url} alt={selectedSpec.name} style={{ objectFit: "cover", width: "100%", height: "100%" }} />
                   ) : (
                     <Package size={14} style={{ color: "#C0BEBB" }} />
                   )}
@@ -515,7 +514,7 @@ function SpecCard({
         style={{ width: 44, height: 44, borderRadius: 10, backgroundColor: "#F0EEEB", overflow: "hidden" }}
       >
         {spec?.image_url ? (
-          <Image src={spec.image_url} alt={spec.name ?? ""} width={44} height={44} style={{ objectFit: "cover", width: "100%", height: "100%" }} />
+          <img src={spec.image_url} alt={spec.name ?? ""} style={{ objectFit: "cover", width: "100%", height: "100%" }} />
         ) : (
           <Package size={18} style={{ color: "#C0BEBB" }} />
         )}
