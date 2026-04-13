@@ -8,11 +8,12 @@
  * Close with the X button, Escape key, or clicking the backdrop.
  */
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useTransition } from "react";
 import { createPortal } from "react-dom";
 import Link from "next/link";
-import { X, ExternalLink, Package, Pencil, ArrowRight, Trash2 } from "lucide-react";
-import { getSpecDetail, deleteSpec, type SpecDetailData } from "./actions";
+import { X, ExternalLink, Package, Pencil, ArrowRight, Trash2, FolderPlus, Loader2, Building2 } from "lucide-react";
+import { getSpecDetail, deleteSpec, getActiveProjects, addSpecToProjectFromLibrary, type SpecDetailData } from "./actions";
+import { SYSTEM_LABEL_MAP, SYSTEM_SCHEDULES } from "@/lib/schedule-types";
 import { Dialog, DialogContent } from "@/components/ui/dialog";
 
 interface Props {
@@ -28,22 +29,58 @@ export default function SpecDetailModal({ specId, onClose }: Props) {
   const [deleteError, setDeleteError] = useState<string | null>(null);
   const [lightboxOpen, setLightboxOpen] = useState(false);
 
+  // Add to project state
+  const [addToProjectOpen, setAddToProjectOpen] = useState(false);
+  const [activeProjects, setActiveProjects] = useState<{ id: string; name: string; code: string | null }[]>([]);
+  const [selectedProjectId, setSelectedProjectId] = useState("");
+  const [selectedItemType, setSelectedItemType] = useState("");
+  const [addError, setAddError] = useState<string | null>(null);
+  const [addSuccess, setAddSuccess] = useState<string | null>(null);
+  const [isPending, startTransition] = useTransition();
 
-  // Fetch data whenever specId changes; reset delete state on open/close
+
+  // Fetch data whenever specId changes; reset state on open/close
   useEffect(() => {
     setConfirmDelete(false);
     setDeleteError(null);
     setLightboxOpen(false);
+    setAddToProjectOpen(false);
+    setAddError(null);
+    setAddSuccess(null);
+    setSelectedProjectId("");
+    setSelectedItemType("");
     if (!specId) {
       setData(null);
       return;
     }
     setLoading(true);
-    getSpecDetail(specId).then((d) => {
+    Promise.all([
+      getSpecDetail(specId),
+      getActiveProjects(),
+    ]).then(([d, projs]) => {
       setData(d);
+      setActiveProjects(projs);
       setLoading(false);
     });
   }, [specId]);
+
+  function handleAddToProject(e: React.FormEvent) {
+    e.preventDefault();
+    if (!spec || !selectedProjectId || !selectedItemType) return;
+    setAddError(null);
+    startTransition(async () => {
+      const result = await addSpecToProjectFromLibrary(spec.id, selectedProjectId, selectedItemType);
+      if (result.error) {
+        setAddError(result.error);
+      } else {
+        const proj = activeProjects.find((p) => p.id === selectedProjectId);
+        setAddSuccess(`Added to ${proj?.name ?? "project"}`);
+        setAddToProjectOpen(false);
+        setSelectedProjectId("");
+        setSelectedItemType("");
+      }
+    });
+  }
 
   async function handleDelete() {
     if (!spec) return;
@@ -315,6 +352,35 @@ export default function SpecDetailModal({ specId, onClose }: Props) {
                   </a>
                 )}
 
+                {/* Add to project button */}
+                {spec && activeProjects.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => { setAddToProjectOpen(true); setAddError(null); }}
+                    className="flex items-center gap-1.5 transition-opacity hover:opacity-80 mt-3"
+                    style={{
+                      width: "100%",
+                      padding: "7px 12px",
+                      borderRadius: 8,
+                      border: "none",
+                      backgroundColor: "#FFDE28",
+                      fontFamily: "var(--font-inter), sans-serif",
+                      fontSize: 12, fontWeight: 600, color: "#1A1A1A",
+                      cursor: "pointer", display: "flex", justifyContent: "center",
+                    }}
+                  >
+                    <FolderPlus size={12} />
+                    Add to project
+                  </button>
+                )}
+
+                {/* Success message */}
+                {addSuccess && (
+                  <p style={{ fontFamily: "var(--font-inter), sans-serif", fontSize: 11, color: "#16A34A", marginTop: 6, textAlign: "center" }}>
+                    ✓ {addSuccess}
+                  </p>
+                )}
+
                 {/* Open full page link */}
                 {spec && (
                   <Link
@@ -453,28 +519,25 @@ export default function SpecDetailModal({ specId, onClose }: Props) {
                               {sup.unit_cost && <span>£{sup.unit_cost} / unit</span>}
                             </div>
                           )}
-                          {sup.website && (
-                            <a
-                              href={sup.website}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              className="inline-flex items-center gap-1.5 transition-opacity hover:opacity-70"
-                              style={{
-                                marginTop: 8,
-                                padding: "5px 12px",
-                                borderRadius: 8,
-                                border: "1px solid #E4E1DC",
-                                backgroundColor: "#FFFFFF",
-                                fontFamily: "var(--font-inter), sans-serif",
-                                fontSize: 12,
-                                fontWeight: 500,
-                                color: "#1A1A1A",
-                                textDecoration: "none",
-                              }}
-                            >
-                              Visit website <ExternalLink size={10} />
-                            </a>
-                          )}
+                          <Link
+                            href={`/contacts?company=${sup.id}`}
+                            className="inline-flex items-center gap-1.5 transition-opacity hover:opacity-70"
+                            style={{
+                              marginTop: 8,
+                              padding: "5px 12px",
+                              borderRadius: 8,
+                              border: "1px solid #E4E1DC",
+                              backgroundColor: "#FFFFFF",
+                              fontFamily: "var(--font-inter), sans-serif",
+                              fontSize: 12,
+                              fontWeight: 500,
+                              color: "#1A1A1A",
+                              textDecoration: "none",
+                            }}
+                            onClick={onClose}
+                          >
+                            <Building2 size={11} /> View in Ida
+                          </Link>
                         </div>
                       ))}
                     </div>
@@ -514,6 +577,75 @@ export default function SpecDetailModal({ specId, onClose }: Props) {
                       ))}
                     </div>
                   </div>
+                )}
+
+                {/* Add to project inline form */}
+                {addToProjectOpen && (
+                  <form
+                    onSubmit={handleAddToProject}
+                    style={{ marginTop: 16, padding: "14px 16px", backgroundColor: "#FAFAF9", borderRadius: 12, border: "1.5px solid #E4E1DC" }}
+                  >
+                    <p style={{ fontFamily: "var(--font-inter), sans-serif", fontSize: 11, fontWeight: 700, color: "#9A9590", textTransform: "uppercase", letterSpacing: "0.07em", marginBottom: 10 }}>
+                      Add to project library
+                    </p>
+
+                    {/* Project picker */}
+                    <div style={{ marginBottom: 8 }}>
+                      <select
+                        value={selectedProjectId}
+                        onChange={(e) => setSelectedProjectId(e.target.value)}
+                        required
+                        style={{ width: "100%", height: 34, paddingLeft: 10, paddingRight: 10, fontFamily: "var(--font-inter), sans-serif", fontSize: 13, color: "#1A1A1A", backgroundColor: "#FFFFFF", border: "1.5px solid #E4E1DC", borderRadius: 8, outline: "none", appearance: "auto" }}
+                      >
+                        <option value="" disabled>Select project…</option>
+                        {activeProjects.map((p) => (
+                          <option key={p.id} value={p.id}>
+                            {p.code ? `${p.code} — ` : ""}{p.name}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+
+                    {/* Schedule type picker */}
+                    <div style={{ marginBottom: 10 }}>
+                      <select
+                        value={selectedItemType}
+                        onChange={(e) => setSelectedItemType(e.target.value)}
+                        required
+                        style={{ width: "100%", height: 34, paddingLeft: 10, paddingRight: 10, fontFamily: "var(--font-inter), sans-serif", fontSize: 13, color: "#1A1A1A", backgroundColor: "#FFFFFF", border: "1.5px solid #E4E1DC", borderRadius: 8, outline: "none", appearance: "auto" }}
+                      >
+                        <option value="" disabled>Schedule type…</option>
+                        {SYSTEM_SCHEDULES.map((s) => (
+                          <option key={s.type} value={s.type}>{s.label}</option>
+                        ))}
+                      </select>
+                    </div>
+
+                    {addError && (
+                      <p style={{ fontFamily: "var(--font-inter), sans-serif", fontSize: 12, color: "#DC2626", marginBottom: 8 }}>
+                        {addError}
+                      </p>
+                    )}
+
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="submit"
+                        disabled={isPending || !selectedProjectId || !selectedItemType}
+                        className="flex items-center gap-1.5 transition-opacity hover:opacity-80"
+                        style={{ flex: 1, height: 32, backgroundColor: "#FFDE28", border: "none", borderRadius: 7, fontFamily: "var(--font-inter), sans-serif", fontSize: 12, fontWeight: 600, color: "#1A1A1A", cursor: "pointer", justifyContent: "center" }}
+                      >
+                        {isPending ? <Loader2 size={12} className="animate-spin" /> : <FolderPlus size={12} />}
+                        Add
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => { setAddToProjectOpen(false); setAddError(null); }}
+                        style={{ height: 32, paddingLeft: 12, paddingRight: 12, backgroundColor: "transparent", border: "1.5px solid #E4E1DC", borderRadius: 7, fontFamily: "var(--font-inter), sans-serif", fontSize: 12, color: "#9A9590", cursor: "pointer" }}
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  </form>
                 )}
 
               </div>
