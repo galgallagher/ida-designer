@@ -190,3 +190,47 @@ export async function deleteDrawing(
   revalidatePath(`/projects/${projectId}/drawings`);
   return { error: null };
 }
+
+// ── Add project option ────────────────────────────────────────────────────────
+
+export async function addProjectOption(
+  projectId: string,
+  name: string
+): Promise<{ error: string | null; optionId: string | null }> {
+  const { error, supabase, studioId } = await getProjectGuard(projectId);
+  if (error || !supabase || !studioId) return { error: error ?? "Not authorised.", optionId: null };
+
+  const trimmedName = name.trim();
+  if (!trimmedName) return { error: "Option name is required.", optionId: null };
+
+  const { data: existing } = await supabase
+    .from("project_options")
+    .select("label, sort_order")
+    .eq("project_id", projectId)
+    .order("sort_order");
+
+  const existingLabels = new Set((existing ?? []).map((o) => o.label));
+  const nextLabel = "ABCDEFGHIJKLMNOPQRSTUVWXYZ".split("").find((l) => !existingLabels.has(l));
+  if (!nextLabel) return { error: "Maximum 26 options reached.", optionId: null };
+
+  const { data: newOption, error: dbError } = await supabase
+    .from("project_options")
+    .insert({
+      studio_id: studioId,
+      project_id: projectId,
+      name: trimmedName,
+      label: nextLabel,
+      sort_order: (existing ?? []).length,
+      is_default: (existing ?? []).length === 0,
+    })
+    .select("id")
+    .single();
+
+  if (dbError) {
+    if (dbError.code === "23505") return { error: `Option "${nextLabel}" already exists.`, optionId: null };
+    return { error: dbError.message, optionId: null };
+  }
+
+  revalidatePath(`/projects/${projectId}/drawings`);
+  return { error: null, optionId: newOption.id };
+}
