@@ -48,8 +48,16 @@ create policy "Studio members can view spec preferences"
   on studio_spec_preferences for select
   using (studio_id = any(select auth_user_studio_ids()));
 
--- Only admins can change preferences
-create policy "Studio admins can manage spec preferences"
-  on studio_spec_preferences for insert, update, delete
+-- Only admins can change preferences (separate policy per operation — Postgres syntax)
+create policy "Studio admins can insert spec preferences"
+  on studio_spec_preferences for insert
+  with check (studio_id = any(select auth_user_admin_studio_ids()));
+
+create policy "Studio admins can update spec preferences"
+  on studio_spec_preferences for update
   using  (studio_id = any(select auth_user_admin_studio_ids()))
   with check (studio_id = any(select auth_user_admin_studio_ids()));
+
+create policy "Studio admins can delete spec preferences"
+  on studio_spec_preferences for delete
+  using  (studio_id = any(select auth_user_admin_studio_ids()));
