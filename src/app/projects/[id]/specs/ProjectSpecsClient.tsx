@@ -17,29 +17,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { addSpecToProject, removeSpecFromProject } from "./actions";
-import type { ProjectSpecRow, SpecItemType, SpecStatus } from "@/types/database";
-
-// ── Constants ─────────────────────────────────────────────────────────────────
-
-const ITEM_TYPE_ORDER: SpecItemType[] = [
-  "ffe",
-  "joinery",
-  "ironmongery",
-  "sanitaryware",
-  "arch_id_finishes",
-  "joinery_finishes",
-  "ffe_finishes",
-];
-
-const ITEM_TYPE_LABELS: Record<SpecItemType, string> = {
-  ffe: "FF&E",
-  ironmongery: "Ironmongery",
-  sanitaryware: "Sanitaryware",
-  joinery: "Joinery",
-  arch_id_finishes: "Arch ID Finishes",
-  joinery_finishes: "Joinery Finishes",
-  ffe_finishes: "FF&E Finishes",
-};
+import type { ProjectSpecRow, SpecStatus } from "@/types/database";
 
 const STATUS_CONFIG: Record<SpecStatus, { bg: string; color: string; label: string }> = {
   draft:     { bg: "#F0EEEB", color: "#9A9590", label: "Draft" },
@@ -79,12 +57,16 @@ const labelStyle: React.CSSProperties = {
 
 type SpecDetail = { id: string; name: string; image_url: string | null };
 
+// A resolved schedule type: key is the DB item_type value, label is what to display
+type Schedule = { key: string; label: string };
+
 interface Props {
   projectId: string;
   projectName: string;
   projectSpecs: ProjectSpecRow[];
   specDetails: SpecDetail[];
   librarySpecs: SpecDetail[];
+  schedules: Schedule[];   // ordered, visible schedule types for this studio
 }
 
 // ── Main component ────────────────────────────────────────────────────────────
@@ -95,13 +77,16 @@ export default function ProjectSpecsClient({
   projectSpecs,
   specDetails,
   librarySpecs,
+  schedules,
 }: Props) {
+  // Build a label lookup map from the dynamic schedule list
+  const scheduleLabelMap = new Map(schedules.map((s) => [s.key, s.label]));
   // ── Add spec dialog ──────────────────────────────────────────────────────────
   const [dialogOpen, setDialogOpen] = useState(false);
   const [step, setStep] = useState<1 | 2>(1);
   const [search, setSearch] = useState("");
   const [selectedSpec, setSelectedSpec] = useState<SpecDetail | null>(null);
-  const [itemType, setItemType] = useState<SpecItemType | "">("");
+  const [itemType, setItemType] = useState<string>("");
   const [notes, setNotes] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
@@ -117,11 +102,11 @@ export default function ProjectSpecsClient({
   // Spec IDs already in the project (exclude from picker)
   const addedSpecIds = useMemo(() => new Set(projectSpecs.map((ps) => ps.spec_id)), [projectSpecs]);
 
-  // Group specs by item_type
+  // Group specs by item_type (string key)
   const groupedSpecs = useMemo(() => {
-    const groups = new Map<SpecItemType | "unassigned", ProjectSpecRow[]>();
+    const groups = new Map<string, ProjectSpecRow[]>();
     projectSpecs.forEach((ps) => {
-      const key = (ps.item_type as SpecItemType | null) ?? "unassigned";
+      const key = ps.item_type ?? "unassigned";
       if (!groups.has(key)) groups.set(key, []);
       groups.get(key)!.push(ps);
     });
@@ -170,7 +155,7 @@ export default function ProjectSpecsClient({
     startTransition(async () => {
       const result = await addSpecToProject(projectId, {
         spec_id: selectedSpec.id,
-        item_type: itemType as SpecItemType,
+        item_type: itemType,
         notes: notes.trim() || null,
       });
       if (result.error) {
@@ -225,13 +210,14 @@ export default function ProjectSpecsClient({
       {/* ── Grouped spec sections ──────────────────────────────────────────── */}
       {projectSpecs.length > 0 ? (
         <div className="flex flex-col gap-8">
-          {ITEM_TYPE_ORDER.map((type) => {
-            const items = groupedSpecs.get(type);
+          {/* Render sections in the studio's configured order */}
+          {schedules.map(({ key, label }) => {
+            const items = groupedSpecs.get(key);
             if (!items || items.length === 0) return null;
             return (
               <SpecSection
-                key={type}
-                label={ITEM_TYPE_LABELS[type]}
+                key={key}
+                label={label}
                 items={items}
                 specDetailMap={specDetailMap}
                 onRemove={handleRemove}
@@ -239,14 +225,17 @@ export default function ProjectSpecsClient({
               />
             );
           })}
-          {/* Unassigned (no item_type set) */}
+          {/* Specs with item types not in the current visible schedule list */}
           {(() => {
-            const items = groupedSpecs.get("unassigned");
-            if (!items || items.length === 0) return null;
+            const knownKeys = new Set(schedules.map((s) => s.key));
+            const orphaned = projectSpecs.filter(
+              (ps) => !knownKeys.has(ps.item_type ?? "unassigned")
+            );
+            if (orphaned.length === 0) return null;
             return (
               <SpecSection
-                label="Unassigned"
-                items={items}
+                label="Other"
+                items={orphaned}
                 specDetailMap={specDetailMap}
                 onRemove={handleRemove}
                 isPending={isPending}
@@ -369,13 +358,13 @@ export default function ProjectSpecsClient({
                 <select
                   autoFocus
                   value={itemType}
-                  onChange={(e) => setItemType(e.target.value as SpecItemType | "")}
+                  onChange={(e) => setItemType(e.target.value)}
                   required
                   style={{ ...inputStyle, appearance: "auto" }}
                 >
                   <option value="" disabled>Which schedule does this belong to?</option>
-                  {ITEM_TYPE_ORDER.map((t) => (
-                    <option key={t} value={t}>{ITEM_TYPE_LABELS[t]}</option>
+                  {schedules.map(({ key, label }) => (
+                    <option key={key} value={key}>{label}</option>
                   ))}
                 </select>
               </div>
