@@ -23,7 +23,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { addDrawing, addFinishToDrawing, removeFinishFromDrawing, deleteDrawing } from "./actions";
+import { addDrawing, addFinishToDrawing, removeFinishFromDrawing, deleteDrawing, addProjectOption } from "./actions";
 import type { ProjectOptionRow, DrawingType, SpecItemType, SpecStatus } from "@/types/database";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -604,9 +604,7 @@ export default function ProjectDrawingsClient({
             onSubmit={(e) => {
               e.preventDefault();
               setOptionError(null);
-              // Import addProjectOption from specs actions
               startTransition(async () => {
-                const { addProjectOption } = await import("../specs/actions");
                 const result = await addProjectOption(projectId, optionName);
                 if (result.error) {
                   setOptionError(result.error);

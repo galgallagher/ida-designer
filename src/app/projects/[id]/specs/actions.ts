@@ -1,11 +1,11 @@
 "use server";
 
 /**
- * Server actions for /projects/[id]/specs — project spec management.
+ * Server actions for /projects/[id]/specs — project spec schedule management.
  *
- * All mutations verify studio ownership by checking project_options.studio_id
- * or (for remove) project_specs.studio_id — no admin-only restriction since
- * all studio members with project access can manage specs.
+ * The project_options table exists in the schema but is transparent to the
+ * user at this level. Each project has a single default option that is
+ * created automatically on first use. The UI shows a flat spec list.
  */
 
 import { revalidatePath } from "next/cache";
@@ -23,7 +23,6 @@ async function getProjectGuard(projectId: string) {
   const studioId = await getCurrentStudioId();
   if (!studioId) return { error: "No studio context.", supabase: null, studioId: null };
 
-  // Verify project belongs to this studio
   const { data: project } = await supabase
     .from("projects")
     .select("id")
@@ -36,31 +35,65 @@ async function getProjectGuard(projectId: string) {
   return { error: null, supabase, studioId };
 }
 
+// ── Resolve or create the default project option ──────────────────────────────
+// Internal helper — the option concept is invisible to the user at this level.
+
+async function resolveDefaultOption(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  projectId: string,
+  studioId: string
+): Promise<string | null> {
+  // Try existing default option first
+  const { data: existing } = await supabase
+    .from("project_options")
+    .select("id")
+    .eq("project_id", projectId)
+    .eq("is_default", true)
+    .single();
+
+  if (existing) return existing.id;
+
+  // Fall back to any option for this project
+  const { data: any } = await supabase
+    .from("project_options")
+    .select("id")
+    .eq("project_id", projectId)
+    .order("sort_order")
+    .limit(1)
+    .single();
+
+  if (any) return any.id;
+
+  // Create a default option on the fly
+  const { data: created } = await supabase
+    .from("project_options")
+    .insert({
+      studio_id: studioId,
+      project_id: projectId,
+      name: "Option A",
+      label: "A",
+      sort_order: 0,
+      is_default: true,
+    })
+    .select("id")
+    .single();
+
+  return created?.id ?? null;
+}
+
 // ── Add spec to project ───────────────────────────────────────────────────────
 
 export async function addSpecToProject(
   projectId: string,
   payload: {
-    project_option_id: string;
     spec_id: string;
     item_type: SpecItemType;
-    drawing_id: string | null;
-    notes: string | null;
+    drawing_id?: string | null;
+    notes?: string | null;
   }
 ): Promise<{ error: string | null }> {
   const { error, supabase, studioId } = await getProjectGuard(projectId);
   if (error || !supabase || !studioId) return { error: error ?? "Not authorised." };
-
-  // Verify the option belongs to this project + studio
-  const { data: option } = await supabase
-    .from("project_options")
-    .select("id")
-    .eq("id", payload.project_option_id)
-    .eq("project_id", projectId)
-    .eq("studio_id", studioId)
-    .single();
-
-  if (!option) return { error: "Option not found." };
 
   // Verify the spec belongs to this studio
   const { data: spec } = await supabase
@@ -72,19 +105,23 @@ export async function addSpecToProject(
 
   if (!spec) return { error: "Spec not found in your library." };
 
+  // Resolve the project option (transparent to the user)
+  const optionId = await resolveDefaultOption(supabase, projectId, studioId);
+  if (!optionId) return { error: "Could not resolve project option." };
+
   const { error: dbError } = await supabase.from("project_specs").insert({
-    project_id: projectId,                          // legacy FK — kept during transition
-    project_option_id: payload.project_option_id,
+    project_id: projectId,
+    project_option_id: optionId,
     studio_id: studioId,
     spec_id: payload.spec_id,
     item_type: payload.item_type,
-    drawing_id: payload.drawing_id,
-    notes: payload.notes,
+    drawing_id: payload.drawing_id ?? null,
+    notes: payload.notes ?? null,
     status: "draft",
   });
 
   if (dbError) {
-    if (dbError.code === "23505") return { error: "This spec is already added to this option." };
+    if (dbError.code === "23505") return { error: "This spec is already in the project schedule." };
     return { error: dbError.message };
   }
 
@@ -101,7 +138,6 @@ export async function removeSpecFromProject(
   const { error, supabase, studioId } = await getProjectGuard(projectId);
   if (error || !supabase || !studioId) return { error: error ?? "Not authorised." };
 
-  // studio_id on project_specs acts as ownership check
   const { error: dbError } = await supabase
     .from("project_specs")
     .delete()
@@ -114,7 +150,7 @@ export async function removeSpecFromProject(
   return { error: null };
 }
 
-// ── Update spec item type / drawing / notes ───────────────────────────────────
+// ── Update spec status / item type / notes ────────────────────────────────────
 
 export async function updateProjectSpec(
   projectSpecId: string,
@@ -139,54 +175,4 @@ export async function updateProjectSpec(
 
   revalidatePath(`/projects/${projectId}/specs`);
   return { error: null };
-}
-
-// ── Add project option ────────────────────────────────────────────────────────
-
-export async function addProjectOption(
-  projectId: string,
-  name: string
-): Promise<{ error: string | null; optionId: string | null }> {
-  const { error, supabase, studioId } = await getProjectGuard(projectId);
-  if (error || !supabase || !studioId) return { error: error ?? "Not authorised.", optionId: null };
-
-  const trimmedName = name.trim();
-  if (!trimmedName) return { error: "Option name is required.", optionId: null };
-
-  // Find the next available label (A → Z)
-  const { data: existing } = await supabase
-    .from("project_options")
-    .select("label, sort_order")
-    .eq("project_id", projectId)
-    .order("sort_order");
-
-  const existingLabels = new Set((existing ?? []).map((o) => o.label));
-  const nextLabel = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
-    .split("")
-    .find((l) => !existingLabels.has(l));
-
-  if (!nextLabel) return { error: "Maximum 26 options reached.", optionId: null };
-
-  const nextSortOrder = (existing ?? []).length;
-
-  const { data: newOption, error: dbError } = await supabase
-    .from("project_options")
-    .insert({
-      studio_id: studioId,
-      project_id: projectId,
-      name: trimmedName,
-      label: nextLabel,
-      sort_order: nextSortOrder,
-      is_default: false,
-    })
-    .select("id")
-    .single();
-
-  if (dbError) {
-    if (dbError.code === "23505") return { error: `Option "${nextLabel}" already exists.`, optionId: null };
-    return { error: dbError.message, optionId: null };
-  }
-
-  revalidatePath(`/projects/${projectId}/specs`);
-  return { error: null, optionId: newOption.id };
 }
