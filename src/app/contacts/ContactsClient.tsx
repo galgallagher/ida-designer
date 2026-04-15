@@ -4,7 +4,7 @@ import { useState, useMemo } from "react";
 import {
   Search, Plus, ChevronRight, Tag, BookUser,
   Users, Package, Hammer, Briefcase, Building, Palette, Camera, Zap, Layers,
-  Mail, Phone, Globe, MapPin,
+  Mail, Phone, Globe, MapPin, LayoutList, LayoutGrid,
 } from "lucide-react";
 import type { ContactCategoryRow } from "@/types/database";
 import { createContactCompany } from "./actions";
@@ -49,6 +49,7 @@ export default function ContactsClient({ companies, categories }: Props) {
   const [selectedTag, setSelectedTag] = useState<string | null>(null);
   const [expandedCats, setExpandedCats] = useState<Set<string>>(new Set());
   const [selectedCompanyId, setSelectedCompanyId] = useState<string | null>(null);
+  const [viewMode, setViewMode] = useState<"rows" | "cards">("rows");
   const [addOpen, setAddOpen] = useState(false);
 
   const topLevel = categories.filter((c) => !c.parent_id);
@@ -198,7 +199,7 @@ export default function ContactsClient({ companies, categories }: Props) {
         {/* ── Main ── */}
         <div className="flex-1 min-w-0">
           {/* Sticky header */}
-          <div style={{ position: "sticky", top: 0, zIndex: 10, backgroundColor: "#EDEDED", marginLeft: -28, marginRight: -28, paddingLeft: 28, paddingRight: 28, marginTop: -28, paddingTop: 28, paddingBottom: 14 }}>
+          <div style={{ position: "sticky", top: -28, zIndex: 10, backgroundColor: "#EDEDED", marginLeft: -28, marginRight: -28, paddingLeft: 28, paddingRight: 28, marginTop: -28, paddingTop: 28, paddingBottom: 16 }}>
             <div className="flex items-center justify-between mb-4">
               <div>
                 <h1 style={{ fontFamily: "var(--font-playfair), serif", fontSize: 26, fontWeight: 700, color: "#1A1A1A", letterSpacing: "-0.01em" }}>Contacts</h1>
@@ -206,14 +207,33 @@ export default function ContactsClient({ companies, categories }: Props) {
                   {filtered.length} {filtered.length === 1 ? "company" : "companies"}
                 </p>
               </div>
-              <button
-                type="button"
-                onClick={() => setAddOpen(true)}
-                className="flex items-center gap-2 px-4 py-2.5 transition-opacity hover:opacity-80"
-                style={{ backgroundColor: "#FFDE28", borderRadius: 10, fontFamily: "var(--font-inter), sans-serif", fontSize: 13, fontWeight: 600, color: "#1A1A1A", border: "none", cursor: "pointer" }}
-              >
-                <Plus size={15} /> Add contact
-              </button>
+              <div className="flex items-center gap-2">
+                {/* View toggle */}
+                <div className="flex items-center" style={{ backgroundColor: "#E4E1DC", borderRadius: 8, padding: 2, gap: 1 }}>
+                  <button
+                    type="button"
+                    onClick={() => setViewMode("rows")}
+                    style={{ display: "flex", alignItems: "center", justifyContent: "center", width: 30, height: 28, borderRadius: 6, border: "none", cursor: "pointer", backgroundColor: viewMode === "rows" ? "#FFFFFF" : "transparent", color: viewMode === "rows" ? "#1A1A1A" : "#9A9590", transition: "all 0.15s ease", boxShadow: viewMode === "rows" ? "0 1px 4px rgba(26,26,26,0.08)" : "none" }}
+                  >
+                    <LayoutList size={14} />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setViewMode("cards")}
+                    style={{ display: "flex", alignItems: "center", justifyContent: "center", width: 30, height: 28, borderRadius: 6, border: "none", cursor: "pointer", backgroundColor: viewMode === "cards" ? "#FFFFFF" : "transparent", color: viewMode === "cards" ? "#1A1A1A" : "#9A9590", transition: "all 0.15s ease", boxShadow: viewMode === "cards" ? "0 1px 4px rgba(26,26,26,0.08)" : "none" }}
+                  >
+                    <LayoutGrid size={14} />
+                  </button>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setAddOpen(true)}
+                  className="flex items-center gap-2 px-4 py-2.5 transition-opacity hover:opacity-80"
+                  style={{ backgroundColor: "#FFDE28", borderRadius: 10, fontFamily: "var(--font-inter), sans-serif", fontSize: 13, fontWeight: 600, color: "#1A1A1A", border: "none", cursor: "pointer" }}
+                >
+                  <Plus size={15} /> Add contact
+                </button>
+              </div>
             </div>
 
             <div className="relative" style={{ maxWidth: 340 }}>
@@ -230,8 +250,8 @@ export default function ContactsClient({ companies, categories }: Props) {
             </div>
           </div>
 
-          {/* List */}
-          <div style={{ paddingTop: 8 }}>
+          {/* List / Grid */}
+          <div style={{ paddingTop: 12 }}>
             {filtered.length === 0 ? (
               <div className="flex flex-col items-center justify-center text-center py-24" style={{ borderRadius: 14, border: "1.5px dashed #E4E1DC", backgroundColor: "#FAFAF9" }}>
                 <div className="flex items-center justify-center rounded-full mb-3" style={{ width: 48, height: 48, backgroundColor: "#F0EEEB" }}>
@@ -256,10 +276,21 @@ export default function ContactsClient({ companies, categories }: Props) {
                   </button>
                 )}
               </div>
-            ) : (
+            ) : viewMode === "rows" ? (
               <div className="flex flex-col gap-1.5">
                 {filtered.map((company) => (
                   <CompanyRow
+                    key={company.id}
+                    company={company}
+                    isSelected={selectedCompanyId === company.id}
+                    onSelect={() => setSelectedCompanyId(selectedCompanyId === company.id ? null : company.id)}
+                  />
+                ))}
+              </div>
+            ) : (
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(180px, 1fr))", gap: 12 }}>
+                {filtered.map((company) => (
+                  <CompanyCard
                     key={company.id}
                     company={company}
                     isSelected={selectedCompanyId === company.id}
@@ -356,6 +387,63 @@ function CompanyRow({ company, isSelected, onSelect }: { company: EnrichedCompan
       </div>
 
       <ChevronRight size={14} style={{ color: "#C0BEBB", flexShrink: 0 }} />
+    </button>
+  );
+}
+
+// ── Company card ──────────────────────────────────────────────────────────────
+
+function CompanyCard({ company, isSelected, onSelect }: { company: EnrichedCompany; isSelected: boolean; onSelect: () => void }) {
+  const initials = company.name.split(" ").slice(0, 2).map((w) => w[0]?.toUpperCase() ?? "").join("");
+
+  return (
+    <button
+      type="button"
+      onClick={onSelect}
+      className="w-full text-left transition-shadow hover:shadow-md"
+      style={{
+        display: "flex", flexDirection: "column", alignItems: "flex-start", padding: "16px 14px",
+        backgroundColor: "#FFFFFF", borderRadius: 14, border: "none", cursor: "pointer",
+        boxShadow: isSelected ? "0 2px 12px rgba(26,26,26,0.1)" : "0 1px 6px rgba(26,26,26,0.06)",
+        outline: isSelected ? "2px solid #FFDE28" : "none",
+        outlineOffset: -2, gap: 10,
+      }}
+    >
+      {/* Avatar */}
+      <div style={{ width: 44, height: 44, borderRadius: 12, backgroundColor: "#F0EEEB", display: "flex", alignItems: "center", justifyContent: "center" }}>
+        <span style={{ fontFamily: "var(--font-inter), sans-serif", fontSize: 15, fontWeight: 700, color: "#9A9590" }}>
+          {initials || "?"}
+        </span>
+      </div>
+
+      {/* Name */}
+      <div style={{ width: "100%", minWidth: 0 }}>
+        <p style={{ fontFamily: "var(--font-inter), sans-serif", fontSize: 13, fontWeight: 600, color: "#1A1A1A", marginBottom: 2, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+          {company.name}
+        </p>
+        {company.categoryName && (
+          <p style={{ fontFamily: "var(--font-inter), sans-serif", fontSize: 11, color: "#9A9590" }}>
+            {company.categoryName}
+          </p>
+        )}
+        {company.city && (
+          <p style={{ fontFamily: "var(--font-inter), sans-serif", fontSize: 11, color: "#C0BEBB", marginTop: 1, display: "flex", alignItems: "center", gap: 3 }}>
+            <MapPin size={9} />{company.city}
+          </p>
+        )}
+      </div>
+
+      {/* Contact icons */}
+      <div className="flex items-center gap-2" style={{ color: "#C0BEBB", marginTop: "auto" }}>
+        {company.email && <Mail size={12} />}
+        {company.phone && <Phone size={12} />}
+        {company.website && <Globe size={12} />}
+        {company.peopleCount > 0 && (
+          <span style={{ fontFamily: "var(--font-inter), sans-serif", fontSize: 10 }}>
+            {company.peopleCount}p
+          </span>
+        )}
+      </div>
     </button>
   );
 }

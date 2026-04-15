@@ -82,10 +82,19 @@ export default async function SpecLibraryPage() {
   // Build category lookup
   const categoryMap = new Map(categories.map((c) => [c.id, c.name]));
 
+  // Build variant group counts (so each card knows "2 colorways")
+  const variantCounts = new Map<string, number>();
+  for (const s of specs) {
+    if (s.variant_group_id) {
+      variantCounts.set(s.variant_group_id, (variantCounts.get(s.variant_group_id) ?? 0) + 1);
+    }
+  }
+
   // Enrich specs
   const enrichedSpecs = specs.map((s) => ({
     ...s,
     categoryName: s.category_id ? (categoryMap.get(s.category_id) ?? null) : null,
+    variantCount: s.variant_group_id ? (variantCounts.get(s.variant_group_id) ?? 1) : 0,
     tags: tagsBySpec[s.id] ?? [],
     suppliers: suppliersBySpec[s.id] ?? [],
   }));

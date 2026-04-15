@@ -10,7 +10,7 @@
 import { useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Users, Briefcase, Package, LogOut, Settings } from "lucide-react";
+import { Users, Briefcase, Package, LogOut, Settings, Layers } from "lucide-react";
 import {
   Tooltip,
   TooltipContent,
@@ -21,8 +21,9 @@ import {
 const navItems = [
   { href: "/clients",  icon: Users,     label: "Clients",      adminOnly: true  },
   { href: "/projects", icon: Briefcase, label: "Projects",     adminOnly: false },
-  { href: "/specs",    icon: Package,   label: "Spec Library", adminOnly: false },
-  { href: "/settings", icon: Settings,  label: "Settings",     adminOnly: true  },
+  { href: "/specs",     icon: Package,  label: "Product Library", adminOnly: false },
+  { href: "/finishes",  icon: Layers,   label: "Finishes",        adminOnly: false },
+  { href: "/settings",  icon: Settings, label: "Settings",        adminOnly: true  },
 ];
 
 interface IconRailProps {

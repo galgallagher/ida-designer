@@ -1,15 +1,17 @@
 "use client";
 
 import { useEffect, useState, useCallback } from "react";
+import Link from "next/link";
 import {
   X, Pencil, Trash2, Plus, Mail, Phone, Globe, MapPin,
-  User, Tag, Loader2, Check, ChevronDown,
+  User, Tag, Loader2, Check, ChevronDown, Package,
 } from "lucide-react";
 import type { ContactCategoryRow } from "@/types/database";
 import {
   getContactDetail, updateContactCompany, deleteContactCompany,
   updateContactTags, createContactPerson, updateContactPerson, deleteContactPerson,
-  type ContactDetailData,
+  getSupplierSpecs,
+  type ContactDetailData, type SupplierSpec,
 } from "./actions";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 
@@ -44,12 +46,14 @@ const inputStyle: React.CSSProperties = {
 
 export default function ContactDetailPanel({ companyId, categories, onClose, onDeleted }: Props) {
   const [data, setData] = useState<ContactDetailData | null>(null);
+  const [supplierSpecs, setSupplierSpecs] = useState<SupplierSpec[]>([]);
   const [loading, setLoading] = useState(false);
 
   const fetchData = useCallback(async (id: string) => {
     setLoading(true);
-    const d = await getContactDetail(id);
+    const [d, specs] = await Promise.all([getContactDetail(id), getSupplierSpecs(id)]);
     setData(d);
+    setSupplierSpecs(specs);
     setLoading(false);
   }, []);
 
@@ -113,6 +117,9 @@ export default function ContactDetailPanel({ companyId, categories, onClose, onD
                 people={data.people}
                 onChanged={() => fetchData(companyId)}
               />
+
+              {/* Library items for this supplier */}
+              <LibrarySection specs={supplierSpecs} />
             </div>
           )}
         </div>
@@ -572,6 +579,75 @@ function PersonForm({
         </button>
       </div>
     </form>
+  );
+}
+
+// ── Library section ───────────────────────────────────────────────────────────
+
+function LibrarySection({ specs }: { specs: SupplierSpec[] }) {
+  if (specs.length === 0) return null;
+
+  function formatCost(spec: SupplierSpec) {
+    if (!spec.cost_from && !spec.cost_to) return null;
+    const unit = spec.cost_unit ? ` / ${spec.cost_unit}` : "";
+    if (spec.cost_from && spec.cost_to && spec.cost_from !== spec.cost_to) {
+      return `£${spec.cost_from.toLocaleString()} – £${spec.cost_to.toLocaleString()}${unit}`;
+    }
+    const val = spec.cost_from ?? spec.cost_to!;
+    return `£${val.toLocaleString()}${unit}`;
+  }
+
+  return (
+    <div style={{ paddingTop: 20, borderTop: "1px solid #F0EEEB" }}>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12 }}>
+        <SectionTitle icon={<Package size={12} />}>
+          Library · {specs.length} {specs.length === 1 ? "item" : "items"}
+        </SectionTitle>
+        <Link
+          href="/specs"
+          style={{ fontFamily: "var(--font-inter), sans-serif", fontSize: 11, color: "#9A9590", textDecoration: "none" }}
+          className="hover:underline"
+        >
+          View all
+        </Link>
+      </div>
+
+      <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+        {specs.map((spec) => {
+          const cost = formatCost(spec);
+          return (
+            <Link
+              key={spec.id}
+              href={`/specs/${spec.id}`}
+              style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 10px", backgroundColor: "#FAFAF9", borderRadius: 10, border: "1px solid #F0EEEB", textDecoration: "none" }}
+              className="hover:border-[#E4E1DC] transition-colors"
+            >
+              {/* Thumbnail */}
+              <div style={{ width: 36, height: 36, borderRadius: 8, backgroundColor: "#F0EEEB", flexShrink: 0, overflow: "hidden" }}>
+                {spec.image_url ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img src={spec.image_url} alt={spec.name} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                ) : (
+                  <div style={{ width: "100%", height: "100%", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                    <Package size={14} style={{ color: "#C0BEBB" }} />
+                  </div>
+                )}
+              </div>
+
+              {/* Info */}
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <p style={{ fontFamily: "var(--font-inter), sans-serif", fontSize: 12, fontWeight: 600, color: "#1A1A1A", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                  {spec.name}
+                </p>
+                <p style={{ fontFamily: "var(--font-inter), sans-serif", fontSize: 11, color: "#9A9590", marginTop: 1 }}>
+                  {[spec.category_name, cost].filter(Boolean).join(" · ")}
+                </p>
+              </div>
+            </Link>
+          );
+        })}
+      </div>
+    </div>
   );
 }
 

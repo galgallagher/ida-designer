@@ -11,7 +11,7 @@
 import { useState } from "react";
 import { usePathname } from "next/navigation";
 import Link from "next/link";
-import { Users, Briefcase, Package, BookUser, LogOut, Star, Settings } from "lucide-react";
+import { Users, Briefcase, Package, BookUser, LogOut, Star, Settings, Layers } from "lucide-react";
 import type { ProfileRow, ClientRow } from "@/types/database";
 import StudioSwitcher from "./StudioSwitcher";
 import { toggleProjectStar } from "@/app/projects/actions";
@@ -21,8 +21,9 @@ import { toggleProjectStar } from "@/app/projects/actions";
 const allNavItems = [
   { label: "Clients",      href: "/clients",   icon: Users,     adminOnly: true  },
   { label: "Projects",     href: "/projects",  icon: Briefcase, adminOnly: false },
-  { label: "Spec Library", href: "/specs",     icon: Package,   adminOnly: false },
-  { label: "Contacts",     href: "/contacts",  icon: BookUser,  adminOnly: false },
+  { label: "Product Library",  href: "/specs",     icon: Package,   adminOnly: false },
+  { label: "Finishes",         href: "/finishes",  icon: Layers,    adminOnly: false },
+  { label: "Contacts",         href: "/contacts",  icon: BookUser,  adminOnly: false },
   { label: "Settings",     href: "/settings",  icon: Settings,  adminOnly: true  },
 ];
 

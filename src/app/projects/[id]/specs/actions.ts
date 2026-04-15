@@ -1,11 +1,13 @@
 "use server";
 
 /**
- * Server actions for /projects/[id]/specs — project spec schedule management.
+ * Server actions for project spec management.
  *
- * The project_options table exists in the schema but is transparent to the
- * user at this level. Each project has a single default option that is
- * created automatically on first use. The UI shows a flat spec list.
+ * Project Library (/specs): add/remove specs. item_type is optional —
+ * items live in the library without a schedule assignment.
+ *
+ * Project Schedule (/specs/schedule): assign/unassign schedule types
+ * on existing project_specs rows via updateProjectSpec.
  */
 
 import { revalidatePath } from "next/cache";
@@ -36,14 +38,12 @@ async function getProjectGuard(projectId: string) {
 }
 
 // ── Resolve or create the default project option ──────────────────────────────
-// Internal helper — the option concept is invisible to the user at this level.
 
 async function resolveDefaultOption(
   supabase: Awaited<ReturnType<typeof createClient>>,
   projectId: string,
   studioId: string
 ): Promise<string | null> {
-  // Try existing default option first
   const { data: existing } = await supabase
     .from("project_options")
     .select("id")
@@ -53,7 +53,6 @@ async function resolveDefaultOption(
 
   if (existing) return existing.id;
 
-  // Fall back to any option for this project
   const { data: any } = await supabase
     .from("project_options")
     .select("id")
@@ -64,7 +63,6 @@ async function resolveDefaultOption(
 
   if (any) return any.id;
 
-  // Create a default option on the fly
   const { data: created } = await supabase
     .from("project_options")
     .insert({
@@ -81,13 +79,15 @@ async function resolveDefaultOption(
   return created?.id ?? null;
 }
 
-// ── Add spec to project ───────────────────────────────────────────────────────
+// ── Add spec to project library ───────────────────────────────────────────────
+// item_type is intentionally NOT required here — specs land in the library
+// without a schedule assignment. They get assigned via the Schedule tab.
 
 export async function addSpecToProject(
   projectId: string,
   payload: {
     spec_id: string;
-    item_type: string;
+    item_type?: string | null;
     drawing_id?: string | null;
     notes?: string | null;
   }
@@ -95,7 +95,6 @@ export async function addSpecToProject(
   const { error, supabase, studioId } = await getProjectGuard(projectId);
   if (error || !supabase || !studioId) return { error: error ?? "Not authorised." };
 
-  // Verify the spec belongs to this studio
   const { data: spec } = await supabase
     .from("specs")
     .select("id")
@@ -105,7 +104,6 @@ export async function addSpecToProject(
 
   if (!spec) return { error: "Spec not found in your library." };
 
-  // Resolve the project option (transparent to the user)
   const optionId = await resolveDefaultOption(supabase, projectId, studioId);
   if (!optionId) return { error: "Could not resolve project option." };
 
@@ -114,22 +112,23 @@ export async function addSpecToProject(
     project_option_id: optionId,
     studio_id: studioId,
     spec_id: payload.spec_id,
-    item_type: payload.item_type,
+    item_type: payload.item_type ?? null,
     drawing_id: payload.drawing_id ?? null,
     notes: payload.notes ?? null,
     status: "draft",
   });
 
   if (dbError) {
-    if (dbError.code === "23505") return { error: "This spec is already in the project schedule." };
+    if (dbError.code === "23505") return { error: "This spec is already in the project." };
     return { error: dbError.message };
   }
 
   revalidatePath(`/projects/${projectId}/specs`);
+  revalidatePath(`/projects/${projectId}/specs/schedule`);
   return { error: null };
 }
 
-// ── Remove spec from project ──────────────────────────────────────────────────
+// ── Remove spec from project entirely ────────────────────────────────────────
 
 export async function removeSpecFromProject(
   projectSpecId: string,
@@ -147,16 +146,41 @@ export async function removeSpecFromProject(
   if (dbError) return { error: dbError.message };
 
   revalidatePath(`/projects/${projectId}/specs`);
+  revalidatePath(`/projects/${projectId}/specs/schedule`);
   return { error: null };
 }
 
-// ── Update spec status / item type / notes ────────────────────────────────────
+// ── Assign spec to a schedule type ────────────────────────────────────────────
+// Sets item_type on an existing project_spec. Pass null to unassign.
+
+export async function assignSpecToSchedule(
+  projectSpecId: string,
+  projectId: string,
+  itemType: string | null
+): Promise<{ error: string | null }> {
+  const { error, supabase, studioId } = await getProjectGuard(projectId);
+  if (error || !supabase || !studioId) return { error: error ?? "Not authorised." };
+
+  const { error: dbError } = await supabase
+    .from("project_specs")
+    .update({ item_type: itemType })
+    .eq("id", projectSpecId)
+    .eq("studio_id", studioId);
+
+  if (dbError) return { error: dbError.message };
+
+  revalidatePath(`/projects/${projectId}/specs`);
+  revalidatePath(`/projects/${projectId}/specs/schedule`);
+  return { error: null };
+}
+
+// ── Update spec status / notes ────────────────────────────────────────────────
 
 export async function updateProjectSpec(
   projectSpecId: string,
   projectId: string,
   payload: {
-    item_type?: string;
+    item_type?: string | null;
     drawing_id?: string | null;
     notes?: string | null;
     status?: SpecStatus;
@@ -174,5 +198,6 @@ export async function updateProjectSpec(
   if (dbError) return { error: dbError.message };
 
   revalidatePath(`/projects/${projectId}/specs`);
+  revalidatePath(`/projects/${projectId}/specs/schedule`);
   return { error: null };
 }

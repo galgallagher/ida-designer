@@ -96,7 +96,7 @@ export default function SpecDetailModal({ specId, onClose }: Props) {
     }
   }
 
-  const { spec, category, fields, valueMap, tags, suppliers, projects } = data ?? {};
+  const { spec, category, fields, valueMap, tags, suppliers, projects, variantSiblings } = data ?? {};
   const createdDate = spec
     ? new Date(spec.created_at).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })
     : "";
@@ -404,11 +404,16 @@ export default function SpecDetailModal({ specId, onClose }: Props) {
                   style={{
                     fontFamily: "var(--font-playfair), serif",
                     fontSize: 22, fontWeight: 700, color: "#1A1A1A",
-                    lineHeight: 1.2, marginBottom: spec?.description ? 8 : 18,
+                    lineHeight: 1.2, marginBottom: spec?.code ? 4 : spec?.description ? 8 : 18,
                   }}
                 >
                   {spec?.name}
                 </h2>
+                {spec?.code && (
+                  <p style={{ fontFamily: "var(--font-inter), sans-serif", fontSize: 12, color: "#9A9590", marginBottom: spec?.description ? 8 : 18, letterSpacing: "0.03em" }}>
+                    {spec.code}
+                  </p>
+                )}
                 {spec?.description && (
                   <p
                     style={{
@@ -539,6 +544,52 @@ export default function SpecDetailModal({ specId, onClose }: Props) {
                             <Building2 size={11} /> View in Ida
                           </Link>
                         </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Other colorways */}
+                {(variantSiblings ?? []).length > 0 && (
+                  <div style={{ marginBottom: 20 }}>
+                    <p style={{ fontFamily: "var(--font-inter), sans-serif", fontSize: 9, fontWeight: 600, color: "#9A9590", textTransform: "uppercase", letterSpacing: "0.07em", marginBottom: 10 }}>
+                      Other colorways
+                    </p>
+                    <div className="flex flex-wrap gap-2">
+                      {variantSiblings!.map((sibling) => (
+                        <Link
+                          key={sibling.id}
+                          href={`/specs/${sibling.id}`}
+                          onClick={onClose}
+                          style={{
+                            display: "flex", alignItems: "center", gap: 8,
+                            padding: "6px 10px 6px 6px",
+                            backgroundColor: "#FAFAF9", border: "1px solid #E4E1DC",
+                            borderRadius: 8, textDecoration: "none",
+                          }}
+                          className="transition-shadow hover:shadow-sm"
+                        >
+                          <div style={{
+                            width: 32, height: 32, borderRadius: 6, flexShrink: 0,
+                            backgroundColor: "#F0EEEB", overflow: "hidden",
+                          }}>
+                            {sibling.image_url
+                              // eslint-disable-next-line @next/next/no-img-element
+                              ? <img src={sibling.image_url} alt={sibling.name} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                              : <Package size={14} style={{ color: "#C0BEBB", margin: "9px auto 0", display: "block" }} />
+                            }
+                          </div>
+                          <div>
+                            <p style={{ fontFamily: "var(--font-inter), sans-serif", fontSize: 11, fontWeight: 600, color: "#1A1A1A", lineHeight: 1.2 }}>
+                              {sibling.name}
+                            </p>
+                            {sibling.code && (
+                              <p style={{ fontFamily: "var(--font-inter), sans-serif", fontSize: 10, color: "#C0BEBB" }}>
+                                {sibling.code}
+                              </p>
+                            )}
+                          </div>
+                        </Link>
                       ))}
                     </div>
                   </div>

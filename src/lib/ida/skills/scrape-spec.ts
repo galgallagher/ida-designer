@@ -209,6 +209,8 @@ function extractCandidateImagesFromMarkdown(
 
 interface ExtractedSpec {
   name: string;
+  code: string | null;
+  colorway: string | null;
   brand: string | null;
   description: string | null;
   collection: string | null;
@@ -255,9 +257,11 @@ ${supplierHint}
 Required JSON shape:
 {
   "name": "product name",
+  "code": "product reference code, SKU, article number, or style code (e.g. '8086/02', 'HAL-65-0123') — extract exactly as shown including slashes and hyphens, or null if not visible",
   "brand": "brand/manufacturer name or null",
   "description": "1-2 sentence description, or null",
   "collection": "collection name if part of one, or null",
+  "colorway": "colour or finish variant name if this is one specific colourway/finish of a multi-variant product (e.g. 'Clay', 'Navy', 'Natural', 'Ivory', 'Brass'). Return null if the product has no colour variants or if this is the only colour offered.",
   "category_suggestion": "best matching category from the list above, or suggest a new one if none fit",
   "cost_from": number or null,
   "cost_to": number or null,
@@ -362,7 +366,7 @@ export const scrapeSpecTool = (categoryNames: string[]) =>
           // 1a. Has any studio scraped this URL before?
           const { data: globalSpec } = await supabase
             .from("global_specs")
-            .select("id, name, brand_name, brand_domain, description, image_url, cost_from, cost_to, cost_unit, category_hint")
+            .select("id, name, code, brand_name, brand_domain, description, image_url, cost_from, cost_to, cost_unit, category_hint")
             .eq("source_url", cleanUrl)
             .limit(1)
             .single();
@@ -383,16 +387,47 @@ export const scrapeSpecTool = (categoryNames: string[]) =>
 
             // 1c. New to this studio — load global fields and return for pinning.
             // No network scrape needed.
-            const { data: globalFields } = await supabase
-              .from("global_spec_fields")
-              .select("label, value, sort_order")
-              .eq("global_spec_id", globalSpec.id)
-              .order("sort_order");
+            const [{ data: globalFields }, variantSiblingResult] = await Promise.all([
+              supabase
+                .from("global_spec_fields")
+                .select("label, value, sort_order")
+                .eq("global_spec_id", globalSpec.id)
+                .order("sort_order"),
+              // Check for a colorway sibling already in this studio
+              (() => {
+                const lastSlash = cleanUrl.lastIndexOf('/');
+                if (lastSlash > 10) {
+                  const baseUrl = cleanUrl.substring(0, lastSlash);
+                  return supabase
+                    .from("specs")
+                    .select("id, variant_group_id")
+                    .eq("studio_id", studioId)
+                    .like("source_url", `${baseUrl}/%`)
+                    .neq("source_url", cleanUrl)
+                    .limit(1)
+                    .maybeSingle();
+                }
+                return Promise.resolve({ data: null });
+              })(),
+            ]);
+
+            let fromGlobalVariantGroupId: string | null = null;
+            const variantSibling = variantSiblingResult.data;
+            if (variantSibling) {
+              fromGlobalVariantGroupId = variantSibling.variant_group_id ?? crypto.randomUUID();
+              if (!variantSibling.variant_group_id) {
+                await supabase
+                  .from("specs")
+                  .update({ variant_group_id: fromGlobalVariantGroupId })
+                  .eq("id", variantSibling.id);
+              }
+            }
 
             return {
               from_global: true as const,
               global_spec_id: globalSpec.id,
               name: globalSpec.name,
+              code: globalSpec.code ?? null,
               brand: globalSpec.brand_name,
               description: globalSpec.description,
               image_url: globalSpec.image_url,
@@ -400,10 +435,10 @@ export const scrapeSpecTool = (categoryNames: string[]) =>
               cost_to: globalSpec.cost_to,
               cost_unit: globalSpec.cost_unit,
               category_hint: globalSpec.category_hint,
-              // Raw fields for display in Ida's chat and for pin-time template mapping
               fields: (globalFields ?? []).map((f) => ({ label: f.label, value: f.value })),
               source_url: cleanUrl,
               brand_domain: globalSpec.brand_domain,
+              variant_group_id: fromGlobalVariantGroupId,
             };
           }
 
@@ -443,6 +478,40 @@ export const scrapeSpecTool = (categoryNames: string[]) =>
           }
         }
       } catch { /* non-critical — proceed with scrape */ }
+
+      // ── Step 3: Variant group detection ────────────────────────────────────
+      // If this URL shares a base path with an existing studio spec, they're
+      // colorway variants. Assign a shared group UUID so the UI can link them.
+      let variantGroupId: string | null = null;
+      try {
+        const { createClient: _vc } = await import("@/lib/supabase/server");
+        const { getCurrentStudioId: _vs } = await import("@/lib/studio-context");
+        const _vSb = await _vc();
+        const _vSid = await _vs();
+        if (_vSid) {
+          const lastSlash = cleanUrl.lastIndexOf('/');
+          if (lastSlash > 10) {
+            const baseUrl = cleanUrl.substring(0, lastSlash);
+            const { data: sibling } = await _vSb
+              .from("specs")
+              .select("id, variant_group_id")
+              .eq("studio_id", _vSid)
+              .like("source_url", `${baseUrl}/%`)
+              .neq("source_url", cleanUrl)
+              .limit(1)
+              .maybeSingle();
+            if (sibling) {
+              variantGroupId = sibling.variant_group_id ?? crypto.randomUUID();
+              if (!sibling.variant_group_id) {
+                await _vSb
+                  .from("specs")
+                  .update({ variant_group_id: variantGroupId })
+                  .eq("id", sibling.id);
+              }
+            }
+          }
+        }
+      } catch { /* non-critical */ }
 
       // ── Fetch the page ────────────────────────────────────────────────
       //
@@ -694,11 +763,12 @@ export const scrapeSpecTool = (categoryNames: string[]) =>
 
           // ── Supplier resolution: domain match → brand name match → auto-create ──
           //
-          // 1. Extract the hostname from the scraped URL (e.g. "johnlewis.com")
-          // 2. Check if any existing company's website matches that domain
-          // 3. Fall back to exact brand-name match
-          // 4. If still nothing but we have a brand name, create a new company
-          //    automatically so the spec is never left orphaned
+          // Priority order:
+          // 1. Domain match — an existing company whose website matches the URL
+          // 2. Brand name match — an existing company whose name matches spec.brand
+          // 3. Auto-create — always named from the URL domain (the actual retailer/
+          //    supplier), NOT the product brand. "justfabrics.co.uk" → "Just Fabrics",
+          //    not "Scion". The brand is who made it; the domain is who sells it.
           let urlDomain: string | null = null;
           try { urlDomain = new URL(url).hostname.replace(/^www\./, ""); } catch { /* ignore */ }
 
@@ -715,22 +785,48 @@ export const scrapeSpecTool = (categoryNames: string[]) =>
             : null;
 
           if (domainMatch) {
+            // 1. Existing company matched by domain — use it
             supplier_id = domainMatch.id;
-          } else if (spec.brand) {
-            // Exact brand-name match (case-insensitive)
-            const brandMatch = contactCompaniesList.find(
-              (c) => c.name.toLowerCase() === spec.brand!.toLowerCase()
-            );
-            if (brandMatch) {
-              supplier_id = brandMatch.id;
-            } else if (studioId) {
-              // Auto-create the company so the spec is always linked
+          } else {
+            // 2. Try brand-name match against existing companies (secondary)
+            if (spec.brand) {
+              const brandMatch = contactCompaniesList.find(
+                (c) => c.name.toLowerCase() === spec.brand!.toLowerCase()
+              );
+              if (brandMatch) {
+                supplier_id = brandMatch.id;
+              }
+            }
+
+            // 3. Still no match — auto-create, naming from URL domain (not brand)
+            if (!supplier_id && studioId && (urlDomain || spec.brand)) {
+              // Derive a readable name from the domain: "justfabrics.co.uk" → "Justfabrics"
+              // Split hyphenated domains: "john-lewis.com" → "John Lewis"
+              const companyName = urlDomain
+                ? urlDomain
+                    .replace(/\.(co\.uk|com\.au|co\.nz|co\.za|com|net|org|io|co|uk|store|shop|online|studio|de|fr|es|it|nl|se|no|dk|be|at|ch|au|nz|ca|ie|sg|hk|jp|br|mx|in|za)$/i, "")
+                    .split(/[-_]/)
+                    .filter(Boolean)
+                    .map((p) => p.charAt(0).toUpperCase() + p.slice(1))
+                    .join(" ")
+                : spec.brand!;
+
+              // Look up the studio's "Suppliers" category
+              const { data: supplierCat } = await supabase
+                .from("contact_categories")
+                .select("id")
+                .eq("studio_id", studioId)
+                .ilike("name", "supplier%")
+                .limit(1)
+                .maybeSingle();
+
               const { data: newCompany } = await supabase
                 .from("contact_companies")
                 .insert({
                   studio_id: studioId,
-                  name: spec.brand,
+                  name: companyName,
                   website: urlDomain ? `https://${urlDomain}` : null,
+                  category_id: supplierCat?.id ?? null,
                 })
                 .select("id")
                 .single();
@@ -752,13 +848,17 @@ export const scrapeSpecTool = (categoryNames: string[]) =>
         let urlDomainForGlobal: string | null = null;
         try { urlDomainForGlobal = new URL(cleanUrl).hostname.replace(/^www\./, ""); } catch { /* ignore */ }
 
+        // Assemble display name: "Otillo · Clay" when colorway is detected
+        const displayName = spec.colorway ? `${spec.name} · ${spec.colorway}` : spec.name;
+
         // ignoreDuplicates: true — first scrape wins; don't overwrite existing global data
         const { data: upsertedGlobal } = await serviceSupabase
           .from("global_specs")
           .upsert(
             {
               source_url: cleanUrl,
-              name: spec.name,
+              name: displayName,
+              code: spec.code ?? null,
               brand_name: spec.brand ?? null,
               brand_domain: urlDomainForGlobal,
               description: spec.description ?? null,
@@ -805,6 +905,7 @@ export const scrapeSpecTool = (categoryNames: string[]) =>
         }
       } catch { /* non-critical — global write failure never blocks studio save */ }
 
-      return { ...spec, category_id, source_url: cleanUrl, images, field_values, supplier_id, global_spec_id: globalSpecId };
+      const displayName = spec.colorway ? `${spec.name} · ${spec.colorway}` : spec.name;
+      return { ...spec, name: displayName, category_id, source_url: cleanUrl, images, field_values, supplier_id, global_spec_id: globalSpecId, variant_group_id: variantGroupId };
     },
   });

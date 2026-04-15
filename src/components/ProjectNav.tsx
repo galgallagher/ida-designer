@@ -47,9 +47,9 @@ export default function ProjectNav({
     { label: "Overview",  href: base,                  icon: LayoutDashboard },
     { label: "Drawings",       href: `${base}/drawings`, icon: ImageIcon },
     { label: "Project Library", href: `${base}/specs`,   icon: Package },
-    { label: "Specs",          href: `${base}/specs/schedule`, icon: ClipboardList, soon: true },
+    { label: "Specs",          href: `${base}/specs/schedule`, icon: ClipboardList },
     { label: "Team",           href: `${base}/team`,    icon: Users },
-    { label: "Settings",       href: `${base}/settings`, icon: Settings, soon: true },
+    { label: "Settings",       href: `${base}/settings`, icon: Settings },
   ];
 
   const status = statusConfig[projectStatus] ?? statusConfig.archived;

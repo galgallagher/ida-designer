@@ -17,6 +17,9 @@ import SpecDetailModal from "./SpecDetailModal";
 export interface EnrichedSpec {
   id: string;
   name: string;
+  code: string | null;
+  variant_group_id: string | null;
+  variantCount: number; // how many specs share this variant_group_id (including self)
   description: string | null;
   image_url: string | null;
   category_id: string | null;
@@ -551,10 +554,20 @@ function SpecCard({ spec, onOpen, categories }: { spec: EnrichedSpec; onOpen: (i
           <p className="font-semibold" style={{ fontFamily: "var(--font-inter), sans-serif", fontSize: 12, color: "#1A1A1A", lineHeight: 1.3, display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden" }}>
             {spec.name}
           </p>
+          {spec.code && (
+            <p style={{ fontFamily: "var(--font-inter), sans-serif", fontSize: 10, color: "#C0BEBB", letterSpacing: "0.02em" }}>
+              {spec.code}
+            </p>
+          )}
           {(spec.cost_from || spec.cost_to) && (
             <p style={{ fontFamily: "var(--font-inter), sans-serif", fontSize: 10, color: "#9A9590" }}>
               {spec.cost_from && spec.cost_to ? `£${spec.cost_from} – £${spec.cost_to}` : spec.cost_from ? `from £${spec.cost_from}` : `up to £${spec.cost_to}`}
               {spec.cost_unit && ` ${spec.cost_unit}`}
+            </p>
+          )}
+          {spec.variantCount > 1 && (
+            <p style={{ fontFamily: "var(--font-inter), sans-serif", fontSize: 9, color: "#7C3AED", fontWeight: 600 }}>
+              {spec.variantCount} colorways
             </p>
           )}
         </div>

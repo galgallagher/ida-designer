@@ -193,11 +193,13 @@ export type SpecRow = {
   template_id: string;
   category_id: string | null;
   name: string;
+  code: string | null;             // product/reference code e.g. "8086/02" (migration 035)
+  variant_group_id: string | null; // shared UUID for colorway siblings (migration 036)
   description: string | null;
   image_url: string | null;
   image_path: string | null;
   source_url: string | null;
-  global_spec_id: string | null;  // new (migration 026) — FK to global_specs
+  global_spec_id: string | null;  // FK to global_specs (migration 026)
   cost_from: number | null;
   cost_to: number | null;
   cost_unit: string | null;
@@ -319,6 +321,7 @@ export type GlobalSpecRow = {
   id: string;
   source_url: string;     // UTM-stripped canonical URL — unique dedup key
   name: string;
+  code: string | null;    // product/reference code (migration 035)
   brand_name: string | null;
   brand_domain: string | null;  // e.g. "johnlewis.com" (no www)
   description: string | null;
@@ -375,6 +378,33 @@ export type StudioFinishRow = {
   updated_at: string;
 };
 
+// ── Studio Materials — Finishes Library (migration 035) ──────────────────────
+// One row per material per studio. Seeded from seed_default_studio_materials().
+// Distinct from StudioFinishRow (migration 028) which is for drawing finish codes.
+
+export type MaterialCategory = 'wood' | 'stone' | 'metal' | 'glass' | 'concrete';
+
+export const MATERIAL_CATEGORIES: { key: MaterialCategory; label: string }[] = [
+  { key: 'wood',     label: 'Wood'               },
+  { key: 'stone',    label: 'Stone & Marble'      },
+  { key: 'metal',    label: 'Metal'               },
+  { key: 'glass',    label: 'Glass'               },
+  { key: 'concrete', label: 'Concrete & Plaster'  },
+];
+
+export type StudioMaterialRow = {
+  id: string;
+  studio_id: string;
+  category: MaterialCategory;
+  name: string;
+  description: string | null;
+  image_url: string | null;
+  image_path: string | null;   // storage path for deletion
+  sort_order: number;
+  created_at: string;
+  updated_at: string;
+};
+
 // ── Drawing Finishes junction (migration 029) ─────────────────────────────────
 
 export type DrawingFinishRow = {
@@ -398,6 +428,21 @@ export type StudioSpecPreferenceRow = {
   is_custom: boolean;            // true = studio-created; false = system default (migration 034)
   created_at: string;
   updated_at: string;
+};
+
+// ── Project Schedule Preferences (migration 037) ──────────────────────────────
+// Per-project schedule config. Falls back to studio_spec_preferences when empty.
+
+export type ProjectSchedulePreferenceRow = {
+  id: string;
+  project_id: string;
+  studio_id: string;
+  item_type: string;
+  display_name: string | null;
+  is_visible: boolean;
+  is_custom: boolean;
+  sort_order: number;
+  created_at: string;
 };
 
 // ── Insert types — what you pass when creating a new row ──────────────────
@@ -429,6 +474,7 @@ export type SpecFieldValueInsert = Insertable<Omit<SpecFieldValueRow, "id" | "cr
 export type SpecCategoryInsert = Insertable<Omit<SpecCategoryRow, "id" | "created_at">>;
 export type SpecSupplierInsert = SpecSupplierRow;
 export type ProjectSpecInsert = Insertable<Omit<ProjectSpecRow, "id" | "created_at" | "updated_at">>;
+export type StudioMaterialInsert = Insertable<Omit<StudioMaterialRow, "id" | "created_at" | "updated_at">>;
 export type ContactCategoryInsert = Insertable<Omit<ContactCategoryRow, "id" | "created_at">>;
 export type ContactCompanyInsert = Insertable<Omit<ContactCompanyRow, "id" | "created_at" | "updated_at">>;
 export type ContactPersonInsert = Insertable<Omit<ContactPersonRow, "id" | "created_at" | "updated_at">>;
@@ -636,10 +682,26 @@ export type Database = {
         Update: Partial<StudioSpecPreferenceInsert>;
         Relationships: EmptyRelationships;
       };
+      studio_materials: {
+        Row: StudioMaterialRow;
+        Insert: StudioMaterialInsert;
+        Update: Partial<StudioMaterialInsert>;
+        Relationships: EmptyRelationships;
+      };
+      project_schedule_preferences: {
+        Row: ProjectSchedulePreferenceRow;
+        Insert: Omit<ProjectSchedulePreferenceRow, "id" | "created_at">;
+        Update: Partial<Omit<ProjectSchedulePreferenceRow, "id" | "created_at" | "project_id" | "studio_id">>;
+        Relationships: EmptyRelationships;
+      };
     };
     Views: Record<string, never>;
     Functions: {
       seed_default_contact_categories: {
+        Args: { p_studio_id: string };
+        Returns: undefined;
+      };
+      seed_default_studio_materials: {
         Args: { p_studio_id: string };
         Returns: undefined;
       };
