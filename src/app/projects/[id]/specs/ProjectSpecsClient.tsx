@@ -1,11 +1,11 @@
 "use client";
 
 /**
- * ProjectSpecsClient — /projects/[id]/specs
+ * ProjectSpecsClient — /projects/[id]/specs (Project Library)
  *
- * A flat schedule of spec items assigned to this project, grouped by item
- * type. Specs are added by picking from the studio library — no tabs, no
- * parallel design directions, just everything being considered.
+ * Flat grid of all products and materials being considered for this project.
+ * Items are added from the studio library with a single click — no schedule
+ * assignment at this stage. Schedule assignment happens on the Specs tab.
  */
 
 import { useState, useTransition, useMemo } from "react";
@@ -17,101 +17,57 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { addSpecToProject, removeSpecFromProject } from "./actions";
-import type { ProjectSpecRow, SpecStatus } from "@/types/database";
-
-const STATUS_CONFIG: Record<SpecStatus, { bg: string; color: string; label: string }> = {
-  draft:     { bg: "#F0EEEB", color: "#9A9590", label: "Draft" },
-  specified: { bg: "#DBEAFE", color: "#2563EB", label: "Specified" },
-  approved:  { bg: "#DCFCE7", color: "#16A34A", label: "Approved" },
-  ordered:   { bg: "#FED7AA", color: "#EA580C", label: "Ordered" },
-  delivered: { bg: "#EDE9FE", color: "#7C3AED", label: "Delivered" },
-};
-
-// ── Shared styles ─────────────────────────────────────────────────────────────
-
-const inputStyle: React.CSSProperties = {
-  width: "100%",
-  height: 38,
-  paddingLeft: 12,
-  paddingRight: 12,
-  fontFamily: "var(--font-inter), sans-serif",
-  fontSize: 13,
-  color: "#1A1A1A",
-  backgroundColor: "#FAFAF9",
-  border: "1.5px solid #E4E1DC",
-  borderRadius: 8,
-  outline: "none",
-  boxSizing: "border-box",
-};
-
-const labelStyle: React.CSSProperties = {
-  fontFamily: "var(--font-inter), sans-serif",
-  fontSize: 12,
-  fontWeight: 600,
-  color: "#1A1A1A",
-  marginBottom: 6,
-  display: "block",
-};
+import SpecDetailModal from "@/app/specs/SpecDetailModal";
+import type { ProjectSpecRow } from "@/types/database";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
-type SpecDetail = { id: string; name: string; image_url: string | null };
-
-// A resolved schedule type: key is the DB item_type value, label is what to display
-type Schedule = { key: string; label: string };
+type SpecDetail = {
+  id: string;
+  name: string;
+  code: string | null;
+  image_url: string | null;
+  category_name: string | null;
+  cost_from: number | null;
+  cost_to: number | null;
+  cost_unit: string | null;
+};
 
 interface Props {
   projectId: string;
   projectName: string;
   projectSpecs: ProjectSpecRow[];
-  specDetails: SpecDetail[];
   librarySpecs: SpecDetail[];
-  schedules: Schedule[];   // ordered, visible schedule types for this studio
 }
 
-// ── Main component ────────────────────────────────────────────────────────────
+// ── Main component ─────────────────────────────────────────────────────────────
 
 export default function ProjectSpecsClient({
   projectId,
   projectName,
   projectSpecs,
-  specDetails,
   librarySpecs,
-  schedules,
 }: Props) {
-  // Build a label lookup map from the dynamic schedule list
-  const scheduleLabelMap = new Map(schedules.map((s) => [s.key, s.label]));
-  // ── Add spec dialog ──────────────────────────────────────────────────────────
-  const [dialogOpen, setDialogOpen] = useState(false);
-  const [step, setStep] = useState<1 | 2>(1);
-  const [search, setSearch] = useState("");
-  const [selectedSpec, setSelectedSpec] = useState<SpecDetail | null>(null);
-  const [itemType, setItemType] = useState<string>("");
-  const [notes, setNotes] = useState("");
-  const [error, setError] = useState<string | null>(null);
-  const [isPending, startTransition] = useTransition();
+  const [openSpecId, setOpenSpecId]   = useState<string | null>(null);
+  const [dialogOpen, setDialogOpen]   = useState(false);
+  const [search, setSearch]           = useState("");
+  const [error, setError]             = useState<string | null>(null);
+  const [isPending, startTransition]  = useTransition();
 
-  // ── Derived data ─────────────────────────────────────────────────────────────
+  // ── Derived data ──────────────────────────────────────────────────────────────
 
+  // Build a map for fast spec detail lookups
   const specDetailMap = useMemo(() => {
     const map = new Map<string, SpecDetail>();
-    specDetails.forEach((s) => map.set(s.id, s));
+    librarySpecs.forEach((s) => map.set(s.id, s));
     return map;
-  }, [specDetails]);
+  }, [librarySpecs]);
 
   // Spec IDs already in the project (exclude from picker)
-  const addedSpecIds = useMemo(() => new Set(projectSpecs.map((ps) => ps.spec_id)), [projectSpecs]);
-
-  // Group specs by item_type (string key)
-  const groupedSpecs = useMemo(() => {
-    const groups = new Map<string, ProjectSpecRow[]>();
-    projectSpecs.forEach((ps) => {
-      const key = ps.item_type ?? "unassigned";
-      if (!groups.has(key)) groups.set(key, []);
-      groups.get(key)!.push(ps);
-    });
-    return groups;
-  }, [projectSpecs]);
+  const addedSpecIds = useMemo(
+    () => new Set(projectSpecs.map((ps) => ps.spec_id)),
+    [projectSpecs]
+  );
 
   // Filtered library for the picker
   const filteredLibrary = useMemo(() => {
@@ -121,43 +77,24 @@ export default function ProjectSpecsClient({
     );
   }, [librarySpecs, search, addedSpecIds]);
 
-  // ── Handlers ─────────────────────────────────────────────────────────────────
+  // ── Handlers ──────────────────────────────────────────────────────────────────
 
   function openDialog() {
-    setStep(1);
     setSearch("");
-    setSelectedSpec(null);
-    setItemType("");
-    setNotes("");
     setError(null);
     setDialogOpen(true);
   }
 
   function closeDialog() {
     setDialogOpen(false);
-    setSelectedSpec(null);
-    setItemType("");
-    setNotes("");
-    setError(null);
     setSearch("");
+    setError(null);
   }
 
   function pickSpec(spec: SpecDetail) {
-    setSelectedSpec(spec);
-    setStep(2);
-    setError(null);
-  }
-
-  function handleSubmit(e: React.FormEvent) {
-    e.preventDefault();
-    if (!selectedSpec || !itemType) { setError("Please select an item type."); return; }
     setError(null);
     startTransition(async () => {
-      const result = await addSpecToProject(projectId, {
-        spec_id: selectedSpec.id,
-        item_type: itemType,
-        notes: notes.trim() || null,
-      });
+      const result = await addSpecToProject(projectId, { spec_id: spec.id });
       if (result.error) {
         setError(result.error);
       } else {
@@ -175,10 +112,8 @@ export default function ProjectSpecsClient({
 
   // ── Render ────────────────────────────────────────────────────────────────────
 
-  const totalCount = projectSpecs.length;
-
   return (
-    <div style={{ maxWidth: 860 }}>
+    <div style={{ maxWidth: 960 }}>
 
       {/* ── Header ─────────────────────────────────────────────────────────── */}
       <div className="flex items-start justify-between mb-8">
@@ -188,9 +123,9 @@ export default function ProjectSpecsClient({
           </h1>
           <p style={{ fontFamily: "var(--font-inter), sans-serif", fontSize: 13, color: "#9A9590" }}>
             {projectName}
-            {totalCount > 0 && (
+            {projectSpecs.length > 0 && (
               <span style={{ marginLeft: 8, backgroundColor: "#F0EEEB", borderRadius: 20, padding: "1px 8px" }}>
-                {totalCount}
+                {projectSpecs.length}
               </span>
             )}
           </p>
@@ -203,48 +138,26 @@ export default function ProjectSpecsClient({
           style={{ height: 36, paddingLeft: 14, paddingRight: 14, backgroundColor: "#FFDE28", borderRadius: 8, fontFamily: "var(--font-inter), sans-serif", fontSize: 13, fontWeight: 600, color: "#1A1A1A", border: "none", cursor: "pointer", flexShrink: 0 }}
         >
           <Plus size={14} />
-          Add spec
+          Add to library
         </button>
       </div>
 
-      {/* ── Grouped spec sections ──────────────────────────────────────────── */}
+      {/* ── Flat grid ──────────────────────────────────────────────────────── */}
       {projectSpecs.length > 0 ? (
-        <div className="flex flex-col gap-8">
-          {/* Render sections in the studio's configured order */}
-          {schedules.map(({ key, label }) => {
-            const items = groupedSpecs.get(key);
-            if (!items || items.length === 0) return null;
-            return (
-              <SpecSection
-                key={key}
-                label={label}
-                items={items}
-                specDetailMap={specDetailMap}
-                onRemove={handleRemove}
-                isPending={isPending}
-              />
-            );
-          })}
-          {/* Specs with item types not in the current visible schedule list */}
-          {(() => {
-            const knownKeys = new Set(schedules.map((s) => s.key));
-            const orphaned = projectSpecs.filter(
-              (ps) => !knownKeys.has(ps.item_type ?? "unassigned")
-            );
-            if (orphaned.length === 0) return null;
-            return (
-              <SpecSection
-                label="Other"
-                items={orphaned}
-                specDetailMap={specDetailMap}
-                onRemove={handleRemove}
-                isPending={isPending}
-              />
-            );
-          })()}
+        <div className="grid grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6 gap-3">
+          {projectSpecs.map((ps) => (
+            <SpecCard
+              key={ps.id}
+              projectSpec={ps}
+              spec={specDetailMap.get(ps.spec_id) ?? null}
+              onRemove={handleRemove}
+              onOpen={setOpenSpecId}
+              isPending={isPending}
+            />
+          ))}
         </div>
       ) : (
-        /* ── Empty state ──────────────────────────────────────────────────── */
+        /* ── Empty state ─────────────────────────────────────────────────── */
         <div
           className="flex flex-col items-center justify-center py-20 text-center"
           style={{ borderRadius: 16, border: "1.5px dashed #E4E1DC", backgroundColor: "#FAFAF9" }}
@@ -253,10 +166,10 @@ export default function ProjectSpecsClient({
             <Package size={22} style={{ color: "#9A9590" }} />
           </div>
           <p style={{ fontFamily: "var(--font-playfair), serif", fontSize: 18, fontWeight: 600, color: "#1A1A1A", marginBottom: 8 }}>
-            No specs yet
+            No items yet
           </p>
-          <p style={{ fontFamily: "var(--font-inter), sans-serif", fontSize: 13, color: "#9A9590", marginBottom: 24, lineHeight: 1.6, maxWidth: 340 }}>
-            Add products and materials from your studio library to build the consideration list for this project.
+          <p style={{ fontFamily: "var(--font-inter), sans-serif", fontSize: 13, color: "#9A9590", marginBottom: 24, lineHeight: 1.6, maxWidth: 320 }}>
+            Add products and materials from your studio library. Assign them to schedules once you're ready.
           </p>
           <button
             type="button"
@@ -265,287 +178,197 @@ export default function ProjectSpecsClient({
             style={{ height: 38, paddingLeft: 16, paddingRight: 16, backgroundColor: "#FFDE28", borderRadius: 8, fontFamily: "var(--font-inter), sans-serif", fontSize: 13, fontWeight: 600, color: "#1A1A1A", border: "none", cursor: "pointer" }}
           >
             <Plus size={14} />
-            Add first spec
+            Add first item
           </button>
         </div>
       )}
 
-      {/* ── Add Spec Dialog ────────────────────────────────────────────────── */}
+      {/* ── Spec detail modal ─────────────────────────────────────────────── */}
+      <SpecDetailModal specId={openSpecId} onClose={() => setOpenSpecId(null)} />
+
+      {/* ── Add to library dialog ─────────────────────────────────────────── */}
       <Dialog open={dialogOpen} onOpenChange={(open) => { if (!open) closeDialog(); }}>
-        <DialogContent style={{ maxWidth: 520 }}>
+        <DialogContent style={{ maxWidth: 500 }}>
           <DialogHeader>
             <DialogTitle style={{ fontFamily: "var(--font-playfair), serif", fontSize: 20 }}>
-              {step === 1 ? "Add spec" : selectedSpec?.name ?? "Configure spec"}
+              Add to library
             </DialogTitle>
           </DialogHeader>
 
-          {/* Step 1 — Library picker */}
-          {step === 1 && (
-            <div className="flex flex-col gap-3 mt-2">
-              <input
-                autoFocus
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-                placeholder="Search your library…"
-                style={inputStyle}
-              />
-              <div className="flex flex-col gap-0.5 overflow-y-auto" style={{ maxHeight: 340, minHeight: 100 }}>
-                {filteredLibrary.length === 0 ? (
-                  <p style={{ fontFamily: "var(--font-inter), sans-serif", fontSize: 13, color: "#9A9590", textAlign: "center", padding: "28px 0" }}>
-                    {librarySpecs.length === 0
-                      ? "Your library is empty. Use Ida to scrape some products first."
-                      : search
-                      ? "No matching specs."
-                      : "All library specs are already in this project."}
-                  </p>
-                ) : (
-                  filteredLibrary.map((spec) => (
-                    <button
-                      key={spec.id}
-                      type="button"
-                      onClick={() => pickSpec(spec)}
-                      className="flex items-center gap-3 text-left transition-colors hover:bg-black/[0.04]"
-                      style={{ padding: "8px 10px", borderRadius: 8, border: "none", background: "none", cursor: "pointer", width: "100%" }}
-                    >
-                      <div
-                        className="flex items-center justify-center flex-shrink-0"
-                        style={{ width: 40, height: 40, borderRadius: 8, backgroundColor: "#F0EEEB", overflow: "hidden" }}
-                      >
-                        {spec.image_url ? (
-                          <img src={spec.image_url} alt={spec.name} style={{ objectFit: "cover", width: "100%", height: "100%" }} />
-                        ) : (
-                          <Package size={16} style={{ color: "#C0BEBB" }} />
-                        )}
-                      </div>
-                      <span style={{ fontFamily: "var(--font-inter), sans-serif", fontSize: 13, fontWeight: 500, color: "#1A1A1A", flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                        {spec.name}
-                      </span>
-                    </button>
-                  ))
-                )}
-              </div>
-            </div>
-          )}
+          <div className="flex flex-col gap-3 mt-2">
+            <input
+              autoFocus
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Search your studio library…"
+              style={{
+                width: "100%",
+                height: 38,
+                paddingLeft: 12,
+                paddingRight: 12,
+                fontFamily: "var(--font-inter), sans-serif",
+                fontSize: 13,
+                color: "#1A1A1A",
+                backgroundColor: "#FAFAF9",
+                border: "1.5px solid #E4E1DC",
+                borderRadius: 8,
+                outline: "none",
+                boxSizing: "border-box",
+              }}
+            />
 
-          {/* Step 2 — Configure */}
-          {step === 2 && selectedSpec && (
-            <form onSubmit={handleSubmit} className="flex flex-col gap-4 mt-2">
-              {/* Selected spec preview */}
-              <div
-                className="flex items-center gap-3"
-                style={{ padding: "10px 12px", backgroundColor: "#FAFAF9", borderRadius: 10, border: "1px solid #F0EEEB" }}
-              >
-                <div
-                  className="flex items-center justify-center flex-shrink-0"
-                  style={{ width: 36, height: 36, borderRadius: 8, backgroundColor: "#F0EEEB", overflow: "hidden" }}
-                >
-                  {selectedSpec.image_url ? (
-                    <img src={selectedSpec.image_url} alt={selectedSpec.name} style={{ objectFit: "cover", width: "100%", height: "100%" }} />
-                  ) : (
-                    <Package size={14} style={{ color: "#C0BEBB" }} />
-                  )}
-                </div>
-                <span style={{ fontFamily: "var(--font-inter), sans-serif", fontSize: 13, fontWeight: 500, color: "#1A1A1A", flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                  {selectedSpec.name}
-                </span>
-              </div>
+            {error && (
+              <p style={{ fontFamily: "var(--font-inter), sans-serif", fontSize: 12, color: "#DC2626" }}>
+                {error}
+              </p>
+            )}
 
-              {/* Item type */}
-              <div>
-                <label style={labelStyle}>
-                  Schedule type <span style={{ color: "#DC2626" }}>*</span>
-                </label>
-                <select
-                  autoFocus
-                  value={itemType}
-                  onChange={(e) => setItemType(e.target.value)}
-                  required
-                  style={{ ...inputStyle, appearance: "auto" }}
-                >
-                  <option value="" disabled>Which schedule does this belong to?</option>
-                  {schedules.map(({ key, label }) => (
-                    <option key={key} value={key}>{label}</option>
-                  ))}
-                </select>
-              </div>
-
-              {/* Notes */}
-              <div>
-                <label style={labelStyle}>
-                  Notes <span style={{ color: "#9A9590", fontWeight: 400 }}>(optional)</span>
-                </label>
-                <textarea
-                  value={notes}
-                  onChange={(e) => setNotes(e.target.value)}
-                  placeholder="Any notes for this item…"
-                  rows={2}
-                  style={{ ...inputStyle, height: "auto", paddingTop: 10, paddingBottom: 10, resize: "vertical", lineHeight: 1.5 }}
-                />
-              </div>
-
-              {error && (
-                <p style={{ fontFamily: "var(--font-inter), sans-serif", fontSize: 13, color: "#DC2626" }}>
-                  {error}
+            <div className="flex flex-col gap-0.5 overflow-y-auto" style={{ maxHeight: 380, minHeight: 80 }}>
+              {filteredLibrary.length === 0 ? (
+                <p style={{ fontFamily: "var(--font-inter), sans-serif", fontSize: 13, color: "#9A9590", textAlign: "center", padding: "28px 0" }}>
+                  {librarySpecs.length === 0
+                    ? "Your studio library is empty. Use Ida to add products first."
+                    : search
+                    ? "No matching items."
+                    : "All library items are already in this project."}
                 </p>
+              ) : (
+                filteredLibrary.map((spec) => (
+                  <button
+                    key={spec.id}
+                    type="button"
+                    onClick={() => pickSpec(spec)}
+                    disabled={isPending}
+                    className="flex items-center gap-3 text-left transition-colors hover:bg-black/[0.04]"
+                    style={{ padding: "8px 10px", borderRadius: 8, border: "none", background: "none", cursor: "pointer", width: "100%" }}
+                  >
+                    <div
+                      className="flex items-center justify-center flex-shrink-0"
+                      style={{ width: 40, height: 40, borderRadius: 8, backgroundColor: "#F0EEEB", overflow: "hidden" }}
+                    >
+                      {spec.image_url ? (
+                        <img src={spec.image_url} alt={spec.name} style={{ objectFit: "cover", width: "100%", height: "100%" }} />
+                      ) : (
+                        <Package size={16} style={{ color: "#C0BEBB" }} />
+                      )}
+                    </div>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <p style={{ fontFamily: "var(--font-inter), sans-serif", fontSize: 13, fontWeight: 500, color: "#1A1A1A", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                        {spec.name}
+                      </p>
+                      {spec.category_name && (
+                        <p style={{ fontFamily: "var(--font-inter), sans-serif", fontSize: 11, color: "#9A9590", marginTop: 1 }}>
+                          {spec.category_name}
+                        </p>
+                      )}
+                    </div>
+                    {isPending && <Loader2 size={13} className="animate-spin" style={{ color: "#9A9590", flexShrink: 0 }} />}
+                  </button>
+                ))
               )}
-
-              <div className="flex items-center justify-between pt-1">
-                <button
-                  type="button"
-                  onClick={() => { setStep(1); setError(null); }}
-                  style={{ height: 36, paddingLeft: 14, paddingRight: 14, backgroundColor: "transparent", border: "1.5px solid #E4E1DC", borderRadius: 8, fontFamily: "var(--font-inter), sans-serif", fontSize: 13, fontWeight: 500, color: "#9A9590", cursor: "pointer" }}
-                >
-                  ← Back
-                </button>
-                <button
-                  type="submit"
-                  disabled={isPending || !itemType}
-                  className="flex items-center gap-2 transition-opacity hover:opacity-80"
-                  style={{ height: 36, paddingLeft: 16, paddingRight: 16, backgroundColor: "#FFDE28", border: "none", borderRadius: 8, fontFamily: "var(--font-inter), sans-serif", fontSize: 13, fontWeight: 600, color: "#1A1A1A", cursor: "pointer" }}
-                >
-                  {isPending && <Loader2 size={13} className="animate-spin" />}
-                  Add to project
-                </button>
-              </div>
-            </form>
-          )}
+            </div>
+          </div>
         </DialogContent>
       </Dialog>
     </div>
   );
 }
 
-// ── SpecSection ───────────────────────────────────────────────────────────────
-
-function SpecSection({
-  label,
-  items,
-  specDetailMap,
-  onRemove,
-  isPending,
-}: {
-  label: string;
-  items: ProjectSpecRow[];
-  specDetailMap: Map<string, SpecDetail>;
-  onRemove: (id: string) => void;
-  isPending: boolean;
-}) {
-  return (
-    <div>
-      <div className="flex items-center gap-2 mb-3">
-        <span style={{ fontFamily: "var(--font-inter), sans-serif", fontSize: 11, fontWeight: 700, color: "#9A9590", letterSpacing: "0.08em", textTransform: "uppercase" }}>
-          {label}
-        </span>
-        <span style={{ fontFamily: "var(--font-inter), sans-serif", fontSize: 11, color: "#C0BEBB", backgroundColor: "#F0EEEB", borderRadius: 20, padding: "1px 7px" }}>
-          {items.length}
-        </span>
-      </div>
-      <div className="flex flex-wrap gap-3">
-        {items.map((ps) => (
-          <SpecCard
-            key={ps.id}
-            projectSpec={ps}
-            spec={specDetailMap.get(ps.spec_id) ?? null}
-            onRemove={onRemove}
-            isPending={isPending}
-          />
-        ))}
-      </div>
-    </div>
-  );
-}
-
-// ── SpecCard ──────────────────────────────────────────────────────────────────
+// ── SpecCard ───────────────────────────────────────────────────────────────────
 
 function SpecCard({
   projectSpec,
   spec,
   onRemove,
+  onOpen,
   isPending,
 }: {
   projectSpec: ProjectSpecRow;
   spec: SpecDetail | null;
   onRemove: (id: string) => void;
+  onOpen: (specId: string) => void;
   isPending: boolean;
 }) {
-  const statusCfg = STATUS_CONFIG[projectSpec.status] ?? STATUS_CONFIG.draft;
-
   return (
     <div
-      className="group flex flex-col flex-shrink-0"
-      style={{ width: 180, backgroundColor: "#FFFFFF", borderRadius: 14, boxShadow: "0 2px 12px rgba(26,26,26,0.07)", padding: "14px 14px 12px", position: "relative" }}
+      className="group relative text-left w-full"
+      style={{ background: "none", border: "none", padding: 0, cursor: "pointer" }}
+      onClick={() => onOpen(projectSpec.spec_id)}
+      role="button"
+      tabIndex={0}
+      onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") onOpen(projectSpec.spec_id); }}
     >
-      {/* Remove button — visible on hover */}
+      {/* Remove button */}
       <button
         type="button"
-        onClick={() => onRemove(projectSpec.id)}
+        onClick={(e) => { e.stopPropagation(); onRemove(projectSpec.id); }}
         disabled={isPending}
         title="Remove from project"
-        className="absolute opacity-0 group-hover:opacity-100 transition-opacity"
+        className="absolute opacity-0 group-hover:opacity-100 transition-opacity z-10"
         style={{
           top: 8, right: 8,
-          width: 20, height: 20,
+          width: 24, height: 24,
           border: "none",
-          background: "rgba(26,26,26,0.08)",
+          background: "rgba(26,26,26,0.55)",
           borderRadius: 6,
           cursor: "pointer",
           display: "flex",
           alignItems: "center",
           justifyContent: "center",
-          color: "#9A9590",
+          color: "#FFFFFF",
           padding: 0,
+          backdropFilter: "blur(4px)",
         }}
       >
-        <X size={10} />
+        <X size={11} />
       </button>
 
-      {/* Thumbnail */}
       <div
-        className="flex items-center justify-center mb-3"
-        style={{ width: 44, height: 44, borderRadius: 10, backgroundColor: "#F0EEEB", overflow: "hidden" }}
+        className="bg-white flex flex-col overflow-hidden transition-shadow hover:shadow-md"
+        style={{ borderRadius: 12, boxShadow: "0 2px 8px rgba(26,26,26,0.06)" }}
       >
-        {spec?.image_url ? (
-          <img src={spec.image_url} alt={spec.name ?? ""} style={{ objectFit: "cover", width: "100%", height: "100%" }} />
-        ) : (
-          <Package size={18} style={{ color: "#C0BEBB" }} />
-        )}
+        {/* Square image */}
+        <div className="relative flex-shrink-0" style={{ paddingTop: "100%" }}>
+          <div
+            className="absolute inset-0 flex items-center justify-center"
+            style={{
+              backgroundColor: "#F0EEEB",
+              backgroundImage: spec?.image_url ? `url(${spec.image_url})` : undefined,
+              backgroundSize: "cover",
+              backgroundPosition: "center",
+            }}
+          >
+            {!spec?.image_url && <Package size={20} style={{ color: "#D4D2CF" }} />}
+          </div>
+        </div>
+
+        {/* Text */}
+        <div className="p-2.5 flex flex-col gap-1">
+          {spec?.category_name && (
+            <p style={{ fontFamily: "var(--font-inter), sans-serif", fontSize: 9, fontWeight: 600, color: "#C0BEBB", textTransform: "uppercase", letterSpacing: "0.07em" }}>
+              {spec.category_name}
+            </p>
+          )}
+          <p
+            style={{ fontFamily: "var(--font-inter), sans-serif", fontSize: 12, fontWeight: 600, color: "#1A1A1A", lineHeight: 1.3, display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden" }}
+          >
+            {spec?.name ?? "Unknown"}
+          </p>
+          {spec?.code && (
+            <p style={{ fontFamily: "var(--font-inter), sans-serif", fontSize: 10, color: "#C0BEBB" }}>
+              {spec.code}
+            </p>
+          )}
+          {(spec?.cost_from || spec?.cost_to) && (
+            <p style={{ fontFamily: "var(--font-inter), sans-serif", fontSize: 10, color: "#9A9590" }}>
+              {spec!.cost_from && spec!.cost_to
+                ? `£${spec!.cost_from} – £${spec!.cost_to}`
+                : spec!.cost_from ? `from £${spec!.cost_from}` : `up to £${spec!.cost_to}`}
+              {spec!.cost_unit && ` ${spec!.cost_unit}`}
+            </p>
+          )}
+        </div>
       </div>
-
-      {/* Spec name */}
-      <p
-        style={{
-          fontFamily: "var(--font-inter), sans-serif",
-          fontSize: 12,
-          fontWeight: 500,
-          color: "#1A1A1A",
-          lineHeight: 1.4,
-          marginBottom: 8,
-          overflow: "hidden",
-          display: "-webkit-box",
-          WebkitLineClamp: 2,
-          WebkitBoxOrient: "vertical",
-        }}
-      >
-        {spec?.name ?? "Unknown spec"}
-      </p>
-
-      {/* Status badge */}
-      <span
-        style={{
-          fontFamily: "var(--font-inter), sans-serif",
-          fontSize: 10,
-          fontWeight: 600,
-          letterSpacing: "0.04em",
-          backgroundColor: statusCfg.bg,
-          color: statusCfg.color,
-          borderRadius: 20,
-          padding: "2px 7px",
-          alignSelf: "flex-start",
-          marginTop: "auto",
-        }}
-      >
-        {statusCfg.label}
-      </span>
     </div>
   );
 }

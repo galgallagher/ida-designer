@@ -5,6 +5,64 @@ import { createClient } from "@/lib/supabase/server";
 import { getCurrentStudioId } from "@/lib/studio-context";
 import type { ContactPersonRow } from "@/types/database";
 
+// ── getSupplierSpecs ──────────────────────────────────────────────────────────
+
+export interface SupplierSpec {
+  id: string;
+  name: string;
+  image_url: string | null;
+  cost_from: number | null;
+  cost_to: number | null;
+  cost_unit: string | null;
+  category_name: string | null;
+}
+
+export async function getSupplierSpecs(companyId: string): Promise<SupplierSpec[]> {
+  const { error, supabase, studioId } = await guard();
+  if (error || !supabase || !studioId) return [];
+
+  // Step 1: get spec IDs linked to this supplier
+  const { data: links } = await supabase
+    .from("spec_suppliers")
+    .select("spec_id")
+    .eq("supplier_id", companyId);
+
+  if (!links || links.length === 0) return [];
+
+  const specIds = links.map((l) => l.spec_id);
+
+  // Step 2: fetch those specs (studio scoped) with their categories
+  const { data: specs } = await supabase
+    .from("specs")
+    .select("id, name, image_url, cost_from, cost_to, cost_unit, category_id")
+    .eq("studio_id", studioId)
+    .in("id", specIds)
+    .order("name");
+
+  if (!specs || specs.length === 0) return [];
+
+  // Step 3: fetch category names for any non-null category_ids
+  const catIds = [...new Set(specs.map((s) => s.category_id).filter(Boolean))] as string[];
+  const catMap = new Map<string, string>();
+  if (catIds.length > 0) {
+    const { data: cats } = await supabase
+      .from("spec_categories")
+      .select("id, name")
+      .in("id", catIds);
+    (cats ?? []).forEach((c) => catMap.set(c.id, c.name));
+  }
+
+  return specs.map((s) => ({
+    id: s.id,
+    name: s.name,
+    image_url: s.image_url,
+    cost_from: s.cost_from,
+    cost_to: s.cost_to,
+    cost_unit: s.cost_unit,
+    category_name: s.category_id ? (catMap.get(s.category_id) ?? null) : null,
+  }));
+}
+
 type Result = { error?: string };
 
 // ── helpers ───────────────────────────────────────────────────────────────────

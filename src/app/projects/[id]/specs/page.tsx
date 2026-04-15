@@ -1,17 +1,15 @@
 /**
- * Project Specs — /projects/[id]/specs
+ * Project Library — /projects/[id]/specs
  *
- * Shows all spec items for this project grouped by item type.
- * Specs are picked from the studio library and assigned to the project.
- * There are no tabs or parallel options shown at this level — the schedule
- * is a flat list of everything being considered.
+ * A flat grid of all products and materials being considered for this project.
+ * Items are added from the studio library with one click — no schedule
+ * assignment at this stage. Schedule assignment happens on the Specs tab.
  */
 
 import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { getCurrentStudioId } from "@/lib/studio-context";
 import ProjectSpecsClient from "./ProjectSpecsClient";
-import { SYSTEM_SCHEDULES, SYSTEM_LABEL_MAP } from "@/lib/schedule-types";
 
 interface PageProps {
   params: Promise<{ id: string }>;
@@ -26,85 +24,59 @@ export default async function ProjectSpecsPage({ params }: PageProps) {
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) notFound();
 
-  // Verify project belongs to this studio
-  const { data: project } = await supabase
-    .from("projects")
-    .select("id, name")
-    .eq("id", projectId)
-    .eq("studio_id", studioId)
-    .single();
-
-  if (!project) notFound();
-
-  // ── Fetch schedule preferences for this studio ────────────────────────────
-  const { data: prefsData } = await supabase
-    .from("studio_spec_preferences")
-    .select("item_type, display_name, is_visible, is_custom, sort_order")
-    .eq("studio_id", studioId)
-    .order("sort_order");
-
-  const savedPrefs = prefsData ?? [];
-  const savedTypes = new Set(savedPrefs.map((p) => p.item_type));
-
-  // Build the ordered, visible schedule list for the picker
-  const allSchedules = [
-    ...savedPrefs,
-    // Append any system types not yet saved (default: visible)
-    ...SYSTEM_SCHEDULES
-      .filter((s) => !savedTypes.has(s.type))
-      .map((s, i) => ({
-        item_type: s.type,
-        display_name: null as string | null,
-        is_visible: true,
-        is_custom: false,
-        sort_order: savedPrefs.length + i,
-      })),
-  ];
-
-  const visibleSchedules = allSchedules
-    .filter((s) => s.is_visible)
-    .map((s) => ({
-      key: s.item_type,
-      label: s.display_name || SYSTEM_LABEL_MAP.get(s.item_type) || s.display_name || "Unknown",
-    }));
-
-  // ── Parallel: project specs + studio library ───────────────────────────────
-  const [projectSpecsResult, libraryResult] = await Promise.all([
+  const [{ data: projectData }, projectSpecsResult, libraryResult] = await Promise.all([
+    supabase
+      .from("projects")
+      .select("id, name")
+      .eq("id", projectId)
+      .eq("studio_id", studioId)
+      .single(),
     supabase
       .from("project_specs")
       .select("*")
-      .eq("project_id", projectId)          // use legacy project_id column
+      .eq("project_id", projectId)
       .eq("studio_id", studioId)
       .order("created_at"),
     supabase
       .from("specs")
-      .select("id, name, image_url")
+      .select("id, name, code, image_url, cost_from, cost_to, cost_unit, category_id")
       .eq("studio_id", studioId)
       .order("name"),
   ]);
 
+  if (!projectData) notFound();
+
   const projectSpecs = projectSpecsResult.data ?? [];
-  const librarySpecs = libraryResult.data ?? [];
+  const rawLibrary  = libraryResult.data ?? [];
 
-  // ── Fetch spec details for specs in the schedule ───────────────────────────
-  const specIds = [...new Set(projectSpecs.map((ps) => ps.spec_id))];
-  const specDetailsResult = specIds.length > 0
-    ? await supabase
-        .from("specs")
-        .select("id, name, image_url")
-        .in("id", specIds)
-    : { data: [] };
+  // Resolve category names for library specs
+  const catIds = [...new Set(rawLibrary.map((s) => s.category_id).filter(Boolean))] as string[];
+  const catMap = new Map<string, string>();
+  if (catIds.length > 0) {
+    const { data: cats } = await supabase
+      .from("spec_categories")
+      .select("id, name")
+      .in("id", catIds);
+    (cats ?? []).forEach((c) => catMap.set(c.id, c.name));
+  }
 
-  const specDetails = specDetailsResult.data ?? [];
+  const librarySpecs = rawLibrary.map((s) => ({
+    id: s.id,
+    name: s.name,
+    code: s.code ?? null,
+    image_url: s.image_url,
+    category_name: s.category_id ? (catMap.get(s.category_id) ?? null) : null,
+    cost_from: s.cost_from,
+    cost_to: s.cost_to,
+    cost_unit: s.cost_unit,
+  }));
 
   return (
     <ProjectSpecsClient
       projectId={projectId}
-      projectName={project.name}
+      projectName={projectData.name}
       projectSpecs={projectSpecs}
-      specDetails={specDetails}
       librarySpecs={librarySpecs}
-      schedules={visibleSchedules}
     />
   );
 }

@@ -26,6 +26,9 @@ interface AlreadyExistsResult {
 
 interface SpecResult {
   name?: string;
+  code?: string | null;
+  colorway?: string | null;
+  variant_group_id?: string | null;
   brand?: string | null;
   description?: string | null;
   collection?: string | null;
@@ -329,18 +332,26 @@ function SpecResultCard({
   result,
   onOpenSpec,
   onSaved,
+  projectId,
+  projectName,
 }: {
   result: SpecResult;
   onOpenSpec: (id: string) => void;
   onSaved?: () => void;
+  projectId?: string;
+  projectName?: string;
 }) {
   const [selectedImage, setSelectedImage] = useState<string | null>(
     result.images?.[0]?.url ?? null
   );
   const [manualUrl, setManualUrl] = useState("");
+  const router = useRouter();
   const [saving, setSaving] = useState(false);
   const [savedId, setSavedId] = useState<string | null>(null);
   const [saveError, setSaveError] = useState<string | null>(null);
+  const [addingToProject, setAddingToProject] = useState(false);
+  const [addedToProject, setAddedToProject] = useState(false);
+  const [addToProjectError, setAddToProjectError] = useState<string | null>(null);
 
   // When the user types a URL, immediately use it as the selected image
   function handleManualUrl(val: string) {
@@ -363,6 +374,7 @@ function SpecResultCard({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           name: result.name,
+          code: result.code ?? null,
           description: result.description ?? null,
           category_id: result.category_id ?? null,
           image_url: selectedImage,
@@ -373,6 +385,8 @@ function SpecResultCard({
           source_url: result.source_url ?? null,
           field_values: result.field_values ?? [],
           supplier_id: result.supplier_id ?? null,
+          global_spec_id: (result as { global_spec_id?: string | null }).global_spec_id ?? null,
+          variant_group_id: result.variant_group_id ?? null,
         }),
       });
       const data = await res.json();
@@ -383,6 +397,27 @@ function SpecResultCard({
       setSaveError(e instanceof Error ? e.message : "Save failed");
     } finally {
       setSaving(false);
+    }
+  }
+
+  async function handleAddToProject(specId: string) {
+    if (!projectId) return;
+    setAddingToProject(true);
+    setAddToProjectError(null);
+    try {
+      const res = await fetch("/api/ida/add-to-project", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ spec_id: specId, project_id: projectId }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error ?? "Failed to add to project");
+      setAddedToProject(true);
+      router.refresh();
+    } catch (e) {
+      setAddToProjectError(e instanceof Error ? e.message : "Failed to add to project");
+    } finally {
+      setAddingToProject(false);
     }
   }
 
@@ -502,28 +537,76 @@ function SpecResultCard({
 
       {/* Save / saved row */}
       {savedId ? (
-        <div style={{ marginTop: 10, display: "flex", gap: 6 }}>
-          <div
-            style={{
-              flex: 1, height: 34, backgroundColor: "#F0EEEB", borderRadius: 8,
-              display: "flex", alignItems: "center", justifyContent: "center",
-              fontFamily: "var(--font-inter), sans-serif", fontSize: 12, fontWeight: 600, color: "#9A9590",
-            }}
-          >
-            ✓ Added to library
+        <div style={{ marginTop: 10, display: "flex", flexDirection: "column", gap: 6 }}>
+          {/* Row 1: saved confirmation + view button */}
+          <div style={{ display: "flex", gap: 6 }}>
+            <div
+              style={{
+                flex: 1, height: 34, backgroundColor: "#F0EEEB", borderRadius: 8,
+                display: "flex", alignItems: "center", justifyContent: "center",
+                fontFamily: "var(--font-inter), sans-serif", fontSize: 12, fontWeight: 600, color: "#9A9590",
+              }}
+            >
+              ✓ Added to library
+            </div>
+            <button
+              type="button"
+              onClick={() => onOpenSpec(savedId)}
+              style={{
+                height: 34, paddingLeft: 14, paddingRight: 14, flexShrink: 0,
+                backgroundColor: "#1A1A1A", border: "none", borderRadius: 8,
+                fontFamily: "var(--font-inter), sans-serif", fontSize: 12, fontWeight: 600, color: "#FFDE28",
+                cursor: "pointer",
+              }}
+            >
+              View →
+            </button>
           </div>
-          <button
-            type="button"
-            onClick={() => onOpenSpec(savedId)}
-            style={{
-              height: 34, paddingLeft: 14, paddingRight: 14, flexShrink: 0,
-              backgroundColor: "#1A1A1A", border: "none", borderRadius: 8,
-              fontFamily: "var(--font-inter), sans-serif", fontSize: 12, fontWeight: 600, color: "#FFDE28",
-              cursor: "pointer",
-            }}
-          >
-            View →
-          </button>
+
+          {/* Variant link — shown when this is a colorway of an existing item */}
+          {result.variant_group_id && (
+            <div style={{
+              height: 28, backgroundColor: "#F5F3FF", borderRadius: 7, border: "1px solid #E0DAFF",
+              display: "flex", alignItems: "center", justifyContent: "center", gap: 5,
+              fontFamily: "var(--font-inter), sans-serif", fontSize: 11, color: "#7C3AED",
+            }}>
+              <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>
+              Linked as a colorway variant
+            </div>
+          )}
+
+          {/* Row 2: add to current project (only when inside a project) */}
+          {projectId && (
+            addedToProject ? (
+              <div
+                style={{
+                  height: 34, backgroundColor: "#F0EEEB", borderRadius: 8,
+                  display: "flex", alignItems: "center", justifyContent: "center",
+                  fontFamily: "var(--font-inter), sans-serif", fontSize: 12, fontWeight: 600, color: "#9A9590",
+                }}
+              >
+                ✓ Added to {projectName ?? "project"}
+              </div>
+            ) : (
+              <button
+                type="button"
+                onClick={() => handleAddToProject(savedId)}
+                disabled={addingToProject}
+                style={{
+                  height: 34, width: "100%",
+                  backgroundColor: "#FFDE28", border: "none", borderRadius: 8,
+                  fontFamily: "var(--font-inter), sans-serif", fontSize: 12, fontWeight: 600, color: "#1A1A1A",
+                  cursor: addingToProject ? "default" : "pointer",
+                }}
+              >
+                {addingToProject ? "Adding…" : `Add to ${projectName ?? "project"} library`}
+              </button>
+            )
+          )}
+
+          {addToProjectError && (
+            <p style={{ fontFamily: "var(--font-inter), sans-serif", fontSize: 11, color: "#EF4444" }}>{addToProjectError}</p>
+          )}
         </div>
       ) : (
         <button
@@ -581,6 +664,8 @@ function MessageBubble({
   onOpenSpec,
   onNavigateToLibrary,
   onSpecSaved,
+  projectId,
+  projectName,
 }: {
   role: string;
   content: string;
@@ -589,6 +674,8 @@ function MessageBubble({
   onOpenSpec: (id: string) => void;
   onNavigateToLibrary: (args: Record<string, unknown>) => void;
   onSpecSaved?: () => void;
+  projectId?: string;
+  projectName?: string;
 }) {
   const isUser = role === "user";
 
@@ -658,6 +745,8 @@ function MessageBubble({
             result={specResult}
             onOpenSpec={onOpenSpec}
             onSaved={onSpecSaved}
+            projectId={projectId}
+            projectName={projectName}
           />
         )}
 
@@ -683,7 +772,13 @@ const INITIAL_MESSAGE = {
 
 const STORAGE_KEY = "ida-chat-messages";
 
-export default function IdaWidget() {
+export default function IdaWidget({
+  projectId,
+  projectName,
+}: {
+  projectId?: string;
+  projectName?: string;
+} = {}) {
   const pathname = usePathname();
   const router = useRouter();
   const [open, setOpen] = useState(false);
@@ -706,7 +801,7 @@ export default function IdaWidget() {
 
   const { messages, input, handleInputChange, handleSubmit, isLoading, setMessages } = useChat({
     api: "/api/ida",
-    body: { context: { pathname } },
+    body: { context: { pathname, projectId, projectName } },
     initialMessages: restoredMessages,
     onError: (err) => {
       console.error("Ida error:", err);
@@ -871,6 +966,8 @@ export default function IdaWidget() {
                 onOpenSpec={handleOpenSpec}
                 onNavigateToLibrary={handleNavigateToLibrary}
                 onSpecSaved={() => router.refresh()}
+                projectId={projectId}
+                projectName={projectName}
               />
             ))}
 

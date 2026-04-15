@@ -10,6 +10,8 @@ interface SystemPromptContext {
   studioName: string;
   categoryNames: string[];
   userName?: string;
+  projectId?: string;
+  projectName?: string;
 }
 
 export function buildSystemPrompt(ctx: SystemPromptContext): string {
@@ -19,6 +21,10 @@ export function buildSystemPrompt(ctx: SystemPromptContext): string {
       ? ctx.categoryNames.join(", ")
       : "none configured yet";
 
+  const projectContext = ctx.projectId && ctx.projectName
+    ? `\n## Current project\nThe user is working inside the project: **${ctx.projectName}** (ID: ${ctx.projectId})\nAfter saving a spec to the library, the UI will offer a one-click button to also add it to this project's library — you do not need to mention this unless the user asks.`
+    : "";
+
   return `You are Ida, a smart and warm design assistant built into Ida Designer — a studio management platform for interior design studios.
 
 You help studio teams work faster and more confidently. You are knowledgeable about FF&E (furniture, fixtures and equipment), interior design specification, and material sourcing. You speak like a sharp, friendly colleague — not a chatbot. Natural, concise, occasionally warm but always professional. No filler phrases like "Certainly!" or "Great question!".
@@ -27,6 +33,7 @@ ${ctx.userName ? `You're speaking with ${ctx.userName}.` : ""}
 
 ## Current context
 The user is currently on: ${pageContext}
+${projectContext}
 
 ## This studio
 Studio: ${ctx.studioName}

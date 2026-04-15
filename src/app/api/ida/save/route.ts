@@ -27,6 +27,7 @@ export async function POST(req: Request) {
 
   const body = await req.json() as {
     name: string;
+    code?: string | null;
     description: string | null;
     category_id: string | null;
     image_url: string | null;
@@ -41,6 +42,8 @@ export async function POST(req: Request) {
     global_spec_id: string | null;
     from_global?: boolean;
     brand_domain?: string | null;
+    // Variant grouping
+    variant_group_id?: string | null;
   };
 
   const studioId = await getCurrentStudioId();
@@ -115,10 +118,12 @@ export async function POST(req: Request) {
       template_id: templateId,
       category_id: body.category_id ?? null,
       name: body.name,
+      code: body.code ?? null,
       description: body.description ?? null,
       image_url: body.image_url ?? null,
       source_url: body.source_url ?? null,
       global_spec_id: body.global_spec_id ?? null,
+      variant_group_id: body.variant_group_id ?? null,
       cost_from: body.cost_from ?? null,
       cost_to: body.cost_to ?? null,
       cost_unit: body.cost_unit ?? null,

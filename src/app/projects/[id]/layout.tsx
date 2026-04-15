@@ -13,6 +13,7 @@ import { createClient } from "@/lib/supabase/server";
 import { signOut } from "@/app/login/actions";
 import IconRail from "@/components/IconRail";
 import ProjectNav from "@/components/ProjectNav";
+import IdaWidget from "@/components/IdaWidget";
 import type { ProfileRow, ProjectRow, StudioMemberRole, StudioRow } from "@/types/database";
 
 interface LayoutProps {
@@ -28,12 +29,17 @@ export default async function ProjectLayout({ children, params }: LayoutProps) {
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) redirect("/login");
 
-  // Fetch profile for initials
-  const { data: profileData } = await supabase
-    .from("profiles")
-    .select("*")
-    .eq("id", user.id)
-    .single();
+  // Round 2: fetch profile, memberships, and project all in parallel —
+  // none depend on each other, they only need user.id and the URL param id.
+  const cookieStore = await cookies();
+  const [{ data: profileData }, { data: memberships }, { data: projectData }] = await Promise.all([
+    supabase.from("profiles").select("*").eq("id", user.id).single(),
+    supabase.from("studio_members").select("studio_id, role").eq("user_id", user.id).order("created_at", { ascending: true }),
+    supabase.from("projects").select("*").eq("id", id).single(),
+  ]);
+
+  if (!projectData) notFound();
+  const project = projectData;
   const profile = profileData;
 
   const firstName = profile?.first_name || "";
@@ -43,14 +49,6 @@ export default async function ProjectLayout({ children, params }: LayoutProps) {
     ? `${firstName[0]}${lastName[0] ?? ""}`.toUpperCase()
     : (user.email?.[0] ?? "U").toUpperCase();
 
-  // Resolve current studio
-  const { data: memberships } = await supabase
-    .from("studio_members")
-    .select("studio_id, role")
-    .eq("user_id", user.id)
-    .order("created_at", { ascending: true });
-
-  const cookieStore = await cookies();
   const cookieStudioId = cookieStore.get("current_studio_id")?.value;
   const studioIds = (memberships ?? []).map((m) => m.studio_id);
   const currentStudioId = (cookieStudioId && studioIds.includes(cookieStudioId))
@@ -61,17 +59,7 @@ export default async function ProjectLayout({ children, params }: LayoutProps) {
   const studioRole = currentMembership?.role ?? null;
   const isAdmin = profile?.platform_role === "super_admin" || studioRole === "owner" || studioRole === "admin";
 
-  // Fetch project
-  const { data: projectData } = await supabase
-    .from("projects")
-    .select("*")
-    .eq("id", id)
-    .single();
-
-  if (!projectData) notFound();
-  const project = projectData;
-
-  // Fetch client name
+  // Round 3: client name — only needs project.client_id which we now have
   const { data: clientData } = await supabase
     .from("clients")
     .select("name")
@@ -98,6 +86,9 @@ export default async function ProjectLayout({ children, params }: LayoutProps) {
       <main className="flex-1 overflow-auto" style={{ padding: 32, backgroundColor: "#EDEDED" }}>
         {children}
       </main>
+
+      {/* Ida — pass project context so she can add specs directly to this project */}
+      <IdaWidget projectId={id} projectName={project.name} />
     </div>
   );
 }

@@ -140,6 +140,7 @@ export async function updateSpec(specId: string, formData: FormData): Promise<Up
   const name = (formData.get("name") as string | null)?.trim() ?? "";
   if (!name) return { error: "Name is required." };
 
+  const code = (formData.get("code") as string | null)?.trim() || null;
   const description = (formData.get("description") as string | null)?.trim() || null;
   const cost_from = parseFloat(formData.get("cost_from") as string) || null;
   const cost_to = parseFloat(formData.get("cost_to") as string) || null;
@@ -179,7 +180,7 @@ export async function updateSpec(specId: string, formData: FormData): Promise<Up
   // ── Update core spec row ───────────────────────────────────────────────────
   const { error: specError } = await supabase
     .from("specs")
-    .update({ name, description, cost_from, cost_to, cost_unit, image_url: finalImageUrl, image_path: finalImagePath })
+    .update({ name, code, description, cost_from, cost_to, cost_unit, image_url: finalImageUrl, image_path: finalImagePath })
     .eq("id", specId);
 
   if (specError) {
@@ -261,8 +262,9 @@ export async function updateSpec(specId: string, formData: FormData): Promise<Up
 
 export interface SpecDetailData {
   spec: {
-    id: string; name: string; description: string | null; image_url: string | null;
-    source_url: string | null; global_spec_id: string | null; template_id: string; category_id: string | null;
+    id: string; name: string; code: string | null; description: string | null; image_url: string | null;
+    source_url: string | null; global_spec_id: string | null; variant_group_id: string | null;
+    template_id: string; category_id: string | null;
     cost_from: number | null; cost_to: number | null; cost_unit: string | null; created_at: string;
   };
   category: { id: string; name: string } | null;
@@ -274,6 +276,7 @@ export interface SpecDetailData {
     supplier_code: string | null; unit_cost: number | null;
   }[];
   projects: { id: string; name: string; code: string | null }[];
+  variantSiblings: { id: string; name: string; image_url: string | null; code: string | null }[];
 }
 
 export async function getSpecDetail(id: string): Promise<SpecDetailData | null> {
@@ -334,11 +337,28 @@ export async function getSpecDetail(id: string): Promise<SpecDetailData | null> 
     projects = projData ?? [];
   }
 
+  // Variant siblings — other colorways linked by the same variant_group_id
+  let variantSiblings: SpecDetailData["variantSiblings"] = [];
+  if (spec.variant_group_id) {
+    const { data: siblingsData } = await supabase
+      .from("specs")
+      .select("id, name, image_url, code")
+      .eq("studio_id", spec.studio_id)
+      .eq("variant_group_id", spec.variant_group_id)
+      .neq("id", id);
+    variantSiblings = (siblingsData ?? []).map((s) => ({
+      id: s.id,
+      name: s.name,
+      image_url: s.image_url ?? null,
+      code: s.code ?? null,
+    }));
+  }
+
   return {
     spec: {
-      id: spec.id, name: spec.name, description: spec.description ?? null,
+      id: spec.id, name: spec.name, code: spec.code ?? null, description: spec.description ?? null,
       image_url: spec.image_url ?? null, source_url: spec.source_url ?? null,
-      global_spec_id: spec.global_spec_id ?? null,
+      global_spec_id: spec.global_spec_id ?? null, variant_group_id: spec.variant_group_id ?? null,
       template_id: spec.template_id, category_id: spec.category_id ?? null,
       cost_from: spec.cost_from ?? null, cost_to: spec.cost_to ?? null,
       cost_unit: spec.cost_unit ?? null, created_at: spec.created_at,
@@ -349,6 +369,7 @@ export async function getSpecDetail(id: string): Promise<SpecDetailData | null> 
     tags,
     suppliers,
     projects,
+    variantSiblings,
   };
 }
 

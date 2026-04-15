@@ -154,6 +154,17 @@ export default function EditSpecClient({
               onBlur={blurHandler}
             />
           </Field>
+          <Field label="Product code / SKU">
+            <input
+              type="text"
+              name="code"
+              defaultValue={spec.code ?? ""}
+              placeholder="e.g. 8086/02, SKU-123"
+              style={inputStyle}
+              onFocus={focusHandler}
+              onBlur={blurHandler}
+            />
+          </Field>
           <Field label="Description">
             <textarea
               name="description"

@@ -129,6 +129,11 @@ export default async function SpecDetailPage({ params }: PageProps) {
               <h1 style={{ fontFamily: "var(--font-playfair), serif", fontSize: 24, fontWeight: 700, color: "#1A1A1A", lineHeight: 1.2 }}>
                 {spec.name}
               </h1>
+              {spec.code && (
+                <p style={{ fontFamily: "var(--font-inter), sans-serif", fontSize: 13, color: "#9A9590", marginTop: 2, letterSpacing: "0.03em" }}>
+                  {spec.code}
+                </p>
+              )}
               {spec.description && (
                 <p style={{ fontFamily: "var(--font-inter), sans-serif", fontSize: 13, color: "#9A9590", marginTop: 6, lineHeight: 1.6 }}>
                   {spec.description}

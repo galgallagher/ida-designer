@@ -36,7 +36,7 @@ export async function POST(req: Request) {
   // ── Parse request ──────────────────────────────────────────────────────
   const body = await req.json() as {
     messages: { role: string; content: string }[];
-    context?: { pathname: string };
+    context?: { pathname: string; projectId?: string; projectName?: string };
   };
 
   const { messages, context } = body;
@@ -69,6 +69,8 @@ export async function POST(req: Request) {
     studioName,
     categoryNames,
     userName,
+    projectId: context?.projectId,
+    projectName: context?.projectName,
   });
 
   // ── Stream response ──────────────────────────────────────────────────
