@@ -1,7 +1,7 @@
 # Ida Designer — Project Memory
 
 > Keep this file under 200 lines. Update it as the project evolves.
-> Last updated: 2026-04-14 (session 11)
+> Last updated: 2026-04-16 (session 12)
 
 ## What is this project?
 
@@ -9,7 +9,9 @@ A SaaS platform for interior design studios. Studios manage clients, projects, d
 
 ## Current phase
 
-**Session 11 complete.** Project sub-page loading skeletons (drawings, specs, team, overview), "Spec Library" → "Product Library" rename, Finishes Library (new `/finishes` route, `studio_materials` table, ~50 seeded materials, image upload).
+**Session 12 in progress.** Project Canvas feature — freeform tldraw canvas per project for dropping images, sketches, product URLs as inspiration. Multiple named canvases per project. Feature branch: `feature/project-canvas`.
+
+Previous: Session 11 — loading skeletons, "Spec Library" → "Product Library" rename, Finishes Library, schedule UX overhaul.
 
 ## Tech stack
 
@@ -40,19 +42,15 @@ A SaaS platform for interior design studios. Studios manage clients, projects, d
 - **Platform:** `profiles`
 - **Studio:** `studios`, `studio_members`, `studio_roles`
 - **Project CRM:** `clients`, `contacts`
-- **Project:** `projects`, `project_options`, `drawings`, `drawing_hotspots`, `project_specs`, `project_members`
+- **Project:** `projects`, `project_options`, `project_canvases`, `drawings`, `drawing_hotspots`, `project_specs`, `project_members`
 - **Specs:** `spec_categories`, `spec_templates`, `spec_template_fields`, `specs`, `spec_field_values`, `spec_tags`, `spec_suppliers`
 - **Global library:** `global_specs`, `global_spec_fields`, `global_spec_tags`
 - **Contacts CRM:** `contact_categories`, `contact_companies`, `contact_people`, `contact_tags`
 
-Migrations run: `001` → `036` applied to DB (035/036 were applied manually, no files). Migration file `035_studio_materials.sql` created this session (pending apply).
+Migrations run: `001` → `037` applied to DB.
 
-**Migrations run this session (apply if not yet done):**
-```sql
--- 036: variant grouping
-ALTER TABLE specs ADD COLUMN IF NOT EXISTS variant_group_id uuid;
-CREATE INDEX IF NOT EXISTS idx_specs_variant_group_id ON specs(variant_group_id) WHERE variant_group_id IS NOT NULL;
-```
+**Migration 038 (apply manually via Supabase SQL editor):**
+`supabase/migrations/038_project_canvases.sql` — `project_canvases` table + RLS + `canvas-images` storage bucket.
 
 ## Live environment
 
@@ -79,6 +77,15 @@ src/
     projects/[id]/
       layout.tsx              — includes <IdaWidget projectId= projectName= />
       loading.tsx             — skeleton for fast navigation
+      canvas/
+        page.tsx              — server: fetches canvases, auto-creates default
+        ProjectCanvasClient.tsx — multi-canvas tabs, toolbar, tldraw wrapper, sheet dropdown, PDF export
+        TldrawCanvas.tsx      — tldraw integration, auto-save, image upload, snap mode on
+        SpecCardShape.tsx     — custom tldraw shape for product cards (component + toSvg for export)
+        LibraryPickerModal.tsx — "Add from Library" searchable grid
+        exportPdf.ts          — frames → multi-page PDF via pdf-lib (client-side)
+        actions.ts            — CRUD canvases, save content, upload images, getLibrarySpecs
+        loading.tsx
       specs/
         page.tsx              — fetches specs with code + category_name
         ProjectSpecsClient.tsx — cards show code, click opens SpecDetailModal
@@ -95,6 +102,23 @@ src/
       system-prompt.ts        — injects project context block
   types/database.ts           — SpecRow has code, variant_group_id; GlobalSpecRow has code
 ```
+
+## Project Canvas (migration 038, ADR 018)
+
+Freeform tldraw canvas for project inspiration. Multiple named canvases per project. Canvas state stored as tldraw JSON snapshot in `project_canvases.content` (JSONB). Images uploaded to `canvas-images` Supabase Storage bucket. Auto-save debounced at 1.5s. Canvas tab in ProjectNav after Overview. tldraw lazy-loaded via `next/dynamic`.
+
+**Shipped features on `feature/project-canvas`:**
+- Multi-canvas tabs (create, rename, delete)
+- URL scrape → `/api/canvas/scrape-and-add` (Firecrawl/Jina + Haiku) → save to library → add to project → place `spec-card` shape
+- "Add from Library" picker modal — searchable grid of studio specs, click to drop on canvas
+- Custom `spec-card` shape (`SpecCardShape.tsx`): image + optional text footer + info toggle button + open-modal button; `toSvg` override strips buttons for exports
+- Snap-mode ON by default (`editor.user.updateUserPreferences({ isSnapMode: true })`) — Figma-style edge/centre/gap snapping
+- Font overrides via CSS vars `--tl-font-{draw,sans,serif,mono}` → Playfair + Inter
+- "Add sheet" dropdown (A4/A3 portrait/landscape) — creates native tldraw frame shapes at true print dimensions (96 DPI pixel mapping)
+- "Export PDF" — rasterises each frame via `editor.toImage()`, embeds into multi-page PDF via `pdf-lib` (lazy-loaded), one page per frame at true mm size
+- StylePanel moved to left via CSS `order` override so it doesn't collide with Ida widget
+
+**Known limitation:** external (non-Supabase) images without CORS headers won't render in exported PDFs (canvas tainting). Fix would be to proxy/download images at scrape time — separate task.
 
 ## Spec codes & colorway variants (migration 035–036)
 
