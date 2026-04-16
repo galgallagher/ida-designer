@@ -107,7 +107,11 @@ function SpecCardBody({
             src={imageUrl}
             alt={specName}
             draggable={false}
-            crossOrigin="anonymous"
+            // Intentionally NO crossOrigin="anonymous" — many supplier CDNs
+            // (Kirkby, Osborne & Little, etc.) don't send CORS headers, and
+            // setting crossOrigin causes the browser to block the image
+            // entirely. The PDF-export CORS problem is tracked separately
+            // (fix is image proxy / download-at-scrape-time).
             style={{
               width: "100%",
               height: "100%",
