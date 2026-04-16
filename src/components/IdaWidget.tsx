@@ -393,6 +393,31 @@ function SpecResultCard({
       if (!res.ok) throw new Error(data.error ?? "Save failed");
       setSavedId(data.id as string);
       onSaved?.();
+
+      // Auto-add to project when inside a project page
+      if (projectId) {
+        handleAddToProject(data.id as string);
+      }
+
+      // Dispatch event for canvas integration — the canvas page listens for
+      // this to place the product image on the active canvas automatically.
+      // Only fires when on the canvas page to avoid placing items unintentionally.
+      if (window.location.pathname.includes("/canvas")) {
+        window.dispatchEvent(new CustomEvent("ida:spec-saved", {
+          detail: {
+            spec_id: data.id,
+            name: result.name,
+            brand: result.brand ?? null,
+            code: result.code ?? null,
+            category_name: result.category_suggestion ?? null,
+            image_url: selectedImage,
+            cost_from: result.cost_from ?? null,
+            cost_to: result.cost_to ?? null,
+            cost_unit: result.cost_unit ?? null,
+            source_url: result.source_url ?? null,
+          },
+        }));
+      }
     } catch (e) {
       setSaveError(e instanceof Error ? e.message : "Save failed");
     } finally {
@@ -575,33 +600,17 @@ function SpecResultCard({
             </div>
           )}
 
-          {/* Row 2: add to current project (only when inside a project) */}
-          {projectId && (
-            addedToProject ? (
-              <div
-                style={{
-                  height: 34, backgroundColor: "#F0EEEB", borderRadius: 8,
-                  display: "flex", alignItems: "center", justifyContent: "center",
-                  fontFamily: "var(--font-inter), sans-serif", fontSize: 12, fontWeight: 600, color: "#9A9590",
-                }}
-              >
-                ✓ Added to {projectName ?? "project"}
-              </div>
-            ) : (
-              <button
-                type="button"
-                onClick={() => handleAddToProject(savedId)}
-                disabled={addingToProject}
-                style={{
-                  height: 34, width: "100%",
-                  backgroundColor: "#FFDE28", border: "none", borderRadius: 8,
-                  fontFamily: "var(--font-inter), sans-serif", fontSize: 12, fontWeight: 600, color: "#1A1A1A",
-                  cursor: addingToProject ? "default" : "pointer",
-                }}
-              >
-                {addingToProject ? "Adding…" : `Add to ${projectName ?? "project"} library`}
-              </button>
-            )
+          {/* Auto-added to project confirmation */}
+          {projectId && addedToProject && (
+            <div
+              style={{
+                height: 34, backgroundColor: "#F0EEEB", borderRadius: 8,
+                display: "flex", alignItems: "center", justifyContent: "center",
+                fontFamily: "var(--font-inter), sans-serif", fontSize: 12, fontWeight: 600, color: "#9A9590",
+              }}
+            >
+              ✓ Added to {projectName ?? "project"}
+            </div>
           )}
 
           {addToProjectError && (

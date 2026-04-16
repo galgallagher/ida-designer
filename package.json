@@ -23,10 +23,12 @@
     "clsx": "^2.1.1",
     "lucide-react": "^1.7.0",
     "next": "15.5.14",
+    "pdf-lib": "^1.17.1",
     "react": "^19",
     "react-dom": "^19",
     "tailwind-merge": "^3.5.0",
     "tailwindcss-animate": "^1.0.7",
+    "tldraw": "^4.5.9",
     "zod": "^4.3.6"
   },
   "devDependencies": {
