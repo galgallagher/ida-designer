@@ -445,6 +445,21 @@ export type ProjectSchedulePreferenceRow = {
   created_at: string;
 };
 
+// ── Project Canvases (migration 038) ─────────────────────────────────────────
+// Freeform visual canvas for project inspiration. Content is a tldraw JSON snapshot.
+
+export type ProjectCanvasRow = {
+  id: string;
+  studio_id: string;
+  project_id: string;
+  name: string;
+  content: Json;               // tldraw snapshot — opaque JSONB
+  thumbnail_url: string | null;
+  order_index: number;
+  created_at: string;
+  updated_at: string;
+};
+
 // ── Insert types — what you pass when creating a new row ──────────────────
 // (omit id, created_at, updated_at — Postgres generates these)
 //
@@ -486,6 +501,7 @@ export type StudioFinishInsert = Insertable<Omit<StudioFinishRow, "id" | "create
 // DrawingFinishRow has a composite PK — both columns are required on insert
 export type DrawingFinishInsert = Omit<DrawingFinishRow, "created_at">;
 export type StudioSpecPreferenceInsert = Insertable<Omit<StudioSpecPreferenceRow, "id" | "created_at" | "updated_at">>;
+export type ProjectCanvasInsert = Insertable<Omit<ProjectCanvasRow, "id" | "created_at" | "updated_at">>;
 
 // ── Database type — used to type the Supabase client ─────────────────────
 // This follows the shape that `supabase gen types typescript` would produce.
@@ -686,6 +702,12 @@ export type Database = {
         Row: StudioMaterialRow;
         Insert: StudioMaterialInsert;
         Update: Partial<StudioMaterialInsert>;
+        Relationships: EmptyRelationships;
+      };
+      project_canvases: {
+        Row: ProjectCanvasRow;
+        Insert: ProjectCanvasInsert;
+        Update: Partial<Omit<ProjectCanvasRow, "id" | "created_at">>;
         Relationships: EmptyRelationships;
       };
       project_schedule_preferences: {

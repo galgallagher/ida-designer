@@ -92,3 +92,38 @@
 /* Ida image picker — hide scrollbar visually but keep it functional */
 .hide-scrollbar { scrollbar-width: none; }
 .hide-scrollbar::-webkit-scrollbar { display: none; }
+
+/* ── Project Canvas — tldraw layout overrides ────────────────────────────────
+ * The Ida chat widget lives anchored to the right side of the viewport.
+ * tldraw's StylePanel (colours / size picker) also defaults to top-right,
+ * so the two overlap when a shape is selected. Swap the top row so the
+ * StylePanel sits on the left and the right side stays clear for Ida.
+ * Scoped to .ida-canvas-tldraw so we don't affect any other tldraw usage.
+ */
+.ida-canvas-tldraw .tlui-layout__top__right {
+  order: -1;
+  margin-left: 0;
+  margin-right: auto;
+}
+.ida-canvas-tldraw .tlui-layout__top__left {
+  margin-left: auto;
+  margin-right: 0;
+}
+
+/* ── Project Canvas — tldraw font overrides ──────────────────────────────────
+ * Replace tldraw's bundled fonts with Ida Designer's brand fonts so text on
+ * the canvas feels cohesive with the rest of the app. tldraw reads these
+ * four CSS variables for its four built-in font families — the StylePanel
+ * font picker (Draw / Sans / Serif / Mono) still works exactly as before,
+ * the glyphs just render in our fonts.
+ *
+ * Future: to make this studio-configurable (e.g. for branded client
+ * presentations), set these same variables on a per-studio wrapper element
+ * from DB settings — a drop-in replacement for this block.
+ */
+.ida-canvas-tldraw {
+  --tl-font-draw: var(--font-playfair), Georgia, serif;
+  --tl-font-sans: var(--font-inter), ui-sans-serif, system-ui, sans-serif;
+  --tl-font-serif: var(--font-playfair), Georgia, serif;
+  /* Mono kept as tldraw's bundled IBM Plex Mono — no project mono font. */
+}
