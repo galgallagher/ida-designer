@@ -1,7 +1,7 @@
 # Ida Designer — Project Memory
 
 > Keep this file under 200 lines. Update it as the project evolves.
-> Last updated: 2026-04-16 (session 12)
+> Last updated: 2026-04-17 (session 12)
 
 ## What is this project?
 
@@ -9,7 +9,7 @@ A SaaS platform for interior design studios. Studios manage clients, projects, d
 
 ## Current phase
 
-**Session 12 in progress.** Project Canvas feature — freeform tldraw canvas per project for dropping images, sketches, product URLs as inspiration. Multiple named canvases per project. Feature branch: `feature/project-canvas`.
+**Session 12.** Project Canvas shipped and merged to `main`. Follow-up this session: fixed the canvas PDF export dropping supplier images — server-side image re-hosting + client-side data-URI embedding in `SpecCardShape.toSvg` + one-off backfill script (ADR 019). Also surfaced real Ida chat errors instead of the generic "An error occurred" chip.
 
 Previous: Session 11 — loading skeletons, "Spec Library" → "Product Library" rename, Finishes Library, schedule UX overhaul.
 
@@ -107,7 +107,7 @@ src/
 
 Freeform tldraw canvas for project inspiration. Multiple named canvases per project. Canvas state stored as tldraw JSON snapshot in `project_canvases.content` (JSONB). Images uploaded to `canvas-images` Supabase Storage bucket. Auto-save debounced at 1.5s. Canvas tab in ProjectNav after Overview. tldraw lazy-loaded via `next/dynamic`.
 
-**Shipped features on `feature/project-canvas`:**
+**Shipped (merged to `main`):**
 - Multi-canvas tabs (create, rename, delete)
 - URL scrape → `/api/canvas/scrape-and-add` (Firecrawl/Jina + Haiku) → save to library → add to project → place `spec-card` shape
 - "Add from Library" picker modal — searchable grid of studio specs, click to drop on canvas
@@ -118,7 +118,7 @@ Freeform tldraw canvas for project inspiration. Multiple named canvases per proj
 - "Export PDF" — rasterises each frame via `editor.toImage()`, embeds into multi-page PDF via `pdf-lib` (lazy-loaded), one page per frame at true mm size
 - StylePanel moved to left via CSS `order` override so it doesn't collide with Ida widget
 
-**PDF export images:** supplier images are re-hosted on the `spec-images` Supabase bucket at scrape time (`src/lib/ida/download-image.ts`) so the tldraw export canvas is not tainted by missing CORS headers. See ADR 019. Existing pre-fix specs still need re-scraping to migrate (backfill is future work).
+**PDF export images (ADR 019):** supplier images are re-hosted on the `spec-images` bucket at scrape time via `src/lib/ida/download-image.ts`. The real failure mode turned out to be that browsers refuse to fetch any external resource referenced inside a `<foreignObject>` when the SVG is loaded as an Image src — so `SpecCardShape.toSvg` is async and pre-fetches the image, base64-encodes it, and embeds it as a data URI inline in the SVG. Backfill script at `scripts/backfill-spec-images.ts` (run via `npm run backfill:spec-images`) migrated pre-fix specs. Migration 039 NOT needed — reused the existing `spec-images` bucket from migration 020.
 
 ## Spec codes & colorway variants (migration 035–036)
 
