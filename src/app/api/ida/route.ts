@@ -85,7 +85,22 @@ export async function POST(req: Request) {
       searchSpecs: searchSpecsTool(),
     },
     maxSteps: 5,
+    // Surface streaming errors to server logs — the AI SDK swallows these by
+    // default and the client only ever sees the generic "An error occurred".
+    onError({ error }) {
+      const message = error instanceof Error ? error.message : String(error);
+      const stack = error instanceof Error ? error.stack : undefined;
+      console.error("[/api/ida] streamText error:", message, "\n", stack);
+    },
   });
 
-  return result.toDataStreamResponse();
+  // Include real error messages in the stream so Ida's widget shows something
+  // meaningful instead of the generic chip. Fine for dev + alpha; revisit for
+  // production to avoid leaking internal details.
+  return result.toDataStreamResponse({
+    getErrorMessage(error) {
+      const message = error instanceof Error ? error.message : String(error);
+      return `Ida hit an error: ${message}`;
+    },
+  });
 }

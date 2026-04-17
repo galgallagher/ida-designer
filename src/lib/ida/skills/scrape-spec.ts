@@ -350,6 +350,13 @@ export const scrapeSpecTool = (categoryNames: string[]) =>
       required: ["url"],
     }),
     execute: async ({ url }: { url: string }) => {
+      // Top-level try/catch so any unexpected throw (Haiku timeout, JSON
+      // parse, Supabase blip, etc.) becomes a graceful { error } return
+      // instead of bubbling up to the AI SDK and surfacing as the generic
+      // "An error occurred" red chip in the Ida widget. All the existing
+      // inline `return { error: "..." }` paths still work — they short-
+      // circuit normally without touching this handler.
+      try {
       // Strip tracking params once — use the clean URL throughout
       const cleanUrl = stripTrackingParams(url);
 
@@ -907,5 +914,13 @@ export const scrapeSpecTool = (categoryNames: string[]) =>
 
       const displayName = spec.colorway ? `${spec.name} · ${spec.colorway}` : spec.name;
       return { ...spec, name: displayName, category_id, source_url: cleanUrl, images, field_values, supplier_id, global_spec_id: globalSpecId, variant_group_id: variantGroupId };
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        const stack = err instanceof Error ? err.stack : undefined;
+        console.error("[scrape-spec] Unhandled error for url=%s:", url, message, stack);
+        return {
+          error: `I ran into a problem scraping that page: ${message}. The site might be blocking automated access, or the content was in an unexpected format.`,
+        };
+      }
     },
   });
