@@ -17,6 +17,7 @@ import { getCurrentStudioId } from "@/lib/studio-context";
 import { extractVisualTags } from "@/lib/ida/extract-visual-tags";
 import { resolveTemplateId } from "@/lib/ida/resolve-template";
 import { matchFieldsToTemplate } from "@/lib/ida/match-fields";
+import { downloadAndStoreImage } from "@/lib/ida/download-image";
 
 export async function POST(req: Request) {
   const supabase = await createClient();
@@ -329,6 +330,16 @@ async function scrapeUrl(rawUrl: string, studioId: string, supabase: any): Promi
         );
       if (productImages.length > 0) bestImage = productImages[0];
     }
+  }
+
+  // ── Re-host the chosen image on Supabase storage ──────────────────────────
+  // Supplier CDNs frequently lack permissive CORS headers, which taints the
+  // tldraw export canvas and drops the image from the PDF. Re-hosting on
+  // Supabase storage (which serves with proper CORS) ensures PDF export works.
+  // Falls back to the original URL if the rehost fails — never blocks scrape.
+  if (bestImage) {
+    const rehosted = await downloadAndStoreImage(bestImage, studioId, supabase);
+    if (rehosted) bestImage = rehosted;
   }
 
   // ── Claude Haiku extraction ───────────────────────────────────────────────

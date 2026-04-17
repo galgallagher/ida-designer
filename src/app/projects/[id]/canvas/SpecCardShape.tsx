@@ -107,11 +107,10 @@ function SpecCardBody({
             src={imageUrl}
             alt={specName}
             draggable={false}
-            // Intentionally NO crossOrigin="anonymous" — many supplier CDNs
-            // (Kirkby, Osborne & Little, etc.) don't send CORS headers, and
-            // setting crossOrigin causes the browser to block the image
-            // entirely. The PDF-export CORS problem is tracked separately
-            // (fix is image proxy / download-at-scrape-time).
+            // No crossOrigin attribute — this is a plain DOM <img>, not drawn
+            // to a canvas, so CORS rules don't apply here. PDF export uses the
+            // async toSvg below, which pre-fetches the image and embeds it as
+            // a data URI, so it has its own independent fetch path.
             style={{
               width: "100%",
               height: "100%",
@@ -361,8 +360,41 @@ export class SpecCardShapeUtil extends BaseBoxShapeUtil<SpecCardShape> {
   // wraps component() in a foreignObject, which would include our buttons.
   // Overriding toSvg lets us render the same card body inside a foreignObject
   // but WITHOUT the interactive button overlay — so PDFs come out clean.
-  override toSvg(shape: SpecCardShape) {
-    const { w, h } = shape.props;
+  //
+  // CRITICAL: an SVG loaded as the src of an Image element (which is how
+  // tldraw rasterises shapes for PNG/PDF export) refuses to fetch any
+  // external resources referenced inside a <foreignObject>, regardless of
+  // CORS. The only way to get the product image into the export is to
+  // pre-fetch it, base64-encode it, and embed it as a data URI in the SVG.
+  // We do that here. Falls back to the URL on failure (which will drop from
+  // the export, same as before — never worse).
+  override async toSvg(shape: SpecCardShape) {
+    const { w, h, imageUrl } = shape.props;
+
+    let embeddedSrc: string | null = null;
+    if (imageUrl) {
+      try {
+        const res = await fetch(imageUrl, { mode: "cors", credentials: "omit" });
+        if (res.ok) {
+          const blob = await res.blob();
+          embeddedSrc = await new Promise<string>((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onload = () => resolve(reader.result as string);
+            reader.onerror = () => reject(new Error("FileReader failed"));
+            reader.readAsDataURL(blob);
+          });
+        }
+      } catch {
+        /* fall through — embeddedSrc stays null; image will drop from export */
+      }
+    }
+
+    // Substitute the data URI into a cloned shape so SpecCardBody renders
+    // the embedded version without any other behaviour changing.
+    const shapeForExport: SpecCardShape = embeddedSrc
+      ? { ...shape, props: { ...shape.props, imageUrl: embeddedSrc } }
+      : shape;
+
     return (
       <foreignObject x={0} y={0} width={w} height={h}>
         <div
@@ -381,7 +413,7 @@ export class SpecCardShapeUtil extends BaseBoxShapeUtil<SpecCardShape> {
             fontFamily: "var(--font-inter), sans-serif",
           }}
         >
-          <SpecCardBody shape={shape} />
+          <SpecCardBody shape={shapeForExport} />
         </div>
       </foreignObject>
     );

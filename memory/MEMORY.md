@@ -118,7 +118,7 @@ Freeform tldraw canvas for project inspiration. Multiple named canvases per proj
 - "Export PDF" — rasterises each frame via `editor.toImage()`, embeds into multi-page PDF via `pdf-lib` (lazy-loaded), one page per frame at true mm size
 - StylePanel moved to left via CSS `order` override so it doesn't collide with Ida widget
 
-**Known limitation:** external (non-Supabase) images without CORS headers won't render in exported PDFs (canvas tainting). Fix would be to proxy/download images at scrape time — separate task.
+**PDF export images:** supplier images are re-hosted on the `spec-images` Supabase bucket at scrape time (`src/lib/ida/download-image.ts`) so the tldraw export canvas is not tainted by missing CORS headers. See ADR 019. Existing pre-fix specs still need re-scraping to migrate (backfill is future work).
 
 ## Spec codes & colorway variants (migration 035–036)
 

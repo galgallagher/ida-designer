@@ -19,6 +19,7 @@ import { getCurrentStudioId } from "@/lib/studio-context";
 import { extractVisualTags } from "@/lib/ida/extract-visual-tags";
 import { resolveTemplateId } from "@/lib/ida/resolve-template";
 import { matchFieldsToTemplate } from "@/lib/ida/match-fields";
+import { downloadAndStoreImage } from "@/lib/ida/download-image";
 
 export async function POST(req: Request) {
   const supabase = await createClient();
@@ -110,6 +111,15 @@ export async function POST(req: Request) {
     } catch { /* non-critical */ }
   }
 
+  // ── Re-host image on Supabase storage ──────────────────────────────────────
+  // Supplier CDNs frequently lack permissive CORS headers, which taints the
+  // tldraw export canvas and drops the image from PDF exports of project
+  // canvases. Re-hosting on Supabase storage (which serves with proper CORS)
+  // ensures PDF export works. Falls back to the original URL on failure.
+  const rehostedImageUrl = body.image_url
+    ? (await downloadAndStoreImage(body.image_url, studioId, supabase)) ?? body.image_url
+    : null;
+
   // ── Insert spec ────────────────────────────────────────────────────────────
   const { data: spec, error } = await supabase
     .from("specs")
@@ -120,7 +130,7 @@ export async function POST(req: Request) {
       name: body.name,
       code: body.code ?? null,
       description: body.description ?? null,
-      image_url: body.image_url ?? null,
+      image_url: rehostedImageUrl,
       source_url: body.source_url ?? null,
       global_spec_id: body.global_spec_id ?? null,
       variant_group_id: body.variant_group_id ?? null,
@@ -135,7 +145,7 @@ export async function POST(req: Request) {
 
   // ── Tags ───────────────────────────────────────────────────────────────────
   // For pin flow: also copy global tags so Ida's search works on pinned specs
-  const visualTags = body.image_url ? await extractVisualTags(body.image_url) : [];
+  const visualTags = rehostedImageUrl ? await extractVisualTags(rehostedImageUrl) : [];
   const tags = [...(body.tags ?? []), ...visualTags];
   if (body.source_url) tags.push(`source:${body.source_url}`);
 

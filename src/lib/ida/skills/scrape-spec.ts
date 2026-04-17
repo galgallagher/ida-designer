@@ -850,10 +850,26 @@ export const scrapeSpecTool = (categoryNames: string[]) =>
       let globalSpecId: string | null = null;
       try {
         const { createAdminClient } = await import("@/lib/supabase/server-admin");
+        const { downloadAndStoreImage } = await import("@/lib/ida/download-image");
+        const { getCurrentStudioId } = await import("@/lib/studio-context");
         const serviceSupabase = createAdminClient();
 
         let urlDomainForGlobal: string | null = null;
         try { urlDomainForGlobal = new URL(cleanUrl).hostname.replace(/^www\./, ""); } catch { /* ignore */ }
+
+        // Re-host the primary image on Supabase storage so later studios that
+        // pin this global_spec inherit a URL from our own CDN (needed for
+        // tldraw PDF export). serviceSupabase bypasses RLS; we still write to
+        // the scraping studio's folder. Falls back to the original URL on any
+        // failure — never blocks the scrape.
+        let primaryImage: string | null = images[0]?.url ?? null;
+        try {
+          const scrapingStudioId = await getCurrentStudioId();
+          if (primaryImage && scrapingStudioId) {
+            const rehosted = await downloadAndStoreImage(primaryImage, scrapingStudioId, serviceSupabase);
+            if (rehosted) primaryImage = rehosted;
+          }
+        } catch { /* fall back to original supplier URL */ }
 
         // Assemble display name: "Otillo · Clay" when colorway is detected
         const displayName = spec.colorway ? `${spec.name} · ${spec.colorway}` : spec.name;
@@ -869,7 +885,7 @@ export const scrapeSpecTool = (categoryNames: string[]) =>
               brand_name: spec.brand ?? null,
               brand_domain: urlDomainForGlobal,
               description: spec.description ?? null,
-              image_url: images[0]?.url ?? null,
+              image_url: primaryImage,
               cost_from: spec.cost_from ?? null,
               cost_to: spec.cost_to ?? null,
               cost_unit: spec.cost_unit ?? null,
