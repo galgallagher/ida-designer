@@ -38,3 +38,9 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# Supabase CLI local state (project ref, version pins, etc.)
+supabase/.temp/
+
+# Claude Code / worktrees
+.claude/

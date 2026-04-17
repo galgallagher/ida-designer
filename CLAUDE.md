@@ -5,7 +5,7 @@
 A SaaS platform for interior design studios. Studios manage clients, projects, drawings (floor plans), specifications (materials/products), and contacts (suppliers, contractors, consultants). Key feature: interactive drawing viewer with hotspots that link drawings or pin specs to floor plan locations.
 
 **Dev server:** `npm run dev` → http://localhost:3001
-**Supabase project:** `tsvehxlvmzumcrmstceo`
+**Supabase project:** set `NEXT_PUBLIC_SUPABASE_URL` in `.env.local`
 
 ## Tech stack
 

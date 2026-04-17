@@ -21,7 +21,7 @@ Additionally, the hand-written Insert types used `Omit<Row, "id" | "created_at">
 
 Running `supabase gen types typescript` requires a live Supabase project and CLI setup. The hand-written type in `src/types/database.ts` is sufficient for the current project size and is easier to reason about. The `__InternalSupabase: { PostgrestVersion: "12" }` field must stay in the `Database` type — it tells the SDK which PostgREST version is in use for correct Insert/Update inference.
 
-When the schema stabilises, switch to the CLI-generated type: `npx supabase gen types typescript --project-id tsvehxlvmzumcrmstceo > src/types/database.ts`.
+When the schema stabilises, switch to the CLI-generated type: `npx supabase gen types typescript --project-id <your-project-ref> > src/types/database.ts`.
 
 ### 2. `Insertable<T>` utility type for Insert types
 

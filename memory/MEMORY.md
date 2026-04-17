@@ -55,10 +55,10 @@ Migrations run: `001` → `037` applied to DB.
 ## Live environment
 
 - **URL:** http://localhost:3001 (dev — `npm run dev`, port 3001 hardcoded)
-- **Supabase project:** `tsvehxlvmzumcrmstceo`
+- **Supabase project ref:** read from `NEXT_PUBLIC_SUPABASE_URL` in `.env.local`
 - **MCP Supabase tool is connected to a DIFFERENT project** — use direct SQL editor at supabase.com
-- **Gal's profile ID:** `8809d913-3132-4b8f-8724-478d77cd1b82` (super_admin)
-- **Test Studio ID:** `9c2b2b98-3e63-4d35-a276-a32477364232`
+- **Dev super-admin profile ID:** kept in local `.env.local` / psql memory
+- **Test Studio ID:** kept in local `.env.local` / psql memory
 
 ## File structure (key files)
 
