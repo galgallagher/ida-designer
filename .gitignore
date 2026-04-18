@@ -44,3 +44,6 @@ supabase/.temp/
 
 # Claude Code / worktrees
 .claude/
+
+# Personal scratch — CV appendix drafts, never committed
+/cv-appendix.html
