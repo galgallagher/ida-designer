@@ -127,9 +127,7 @@ scripts/        one-off Node/TSX scripts (migrations, backfills)
 
 ## How it's built
 
-Every line of this codebase was written by Claude Code under my direction. I am not a career software engineer — I'm a product operator with technical fluency, and this project is a working model of how someone in that role can architect a Claude-native product end-to-end.
-
-My rhythm per feature: plan → build → break → fix → review for dead code → re-test → write the ADR → start a fresh session. A security sweep (dependency audit, RLS coverage check, secret scan) runs before every push to `main`. The forced documentation — every decision captured in an ADR before moving on — is what makes this workflow viable at the level of complexity the codebase has reached. The commit history and the ADRs are the accurate record of how the thinking happened.
+Every line of this codebase was written by Claude Code under my direction. My rhythm per feature: plan → build → break → fix → review for dead code → re-test → write the ADR → start a fresh session. A security sweep (dependency audit, RLS coverage check, secret scan) runs before every push to `main`. The forced documentation, one ADR per decision, is what keeps the workflow viable at the level of complexity this codebase has reached. The commit history and the ADRs are the accurate record of how the thinking happened.
 
 ## Known gaps
 
