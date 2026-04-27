@@ -21,8 +21,7 @@ A SaaS platform for interior design studios. Studios manage clients, projects, d
 ## Memory & ADRs — read these first
 
 - **`memory/MEMORY.md`** — full project context, schema, file structure, design tokens, known debt
-- **`memory/NEXT-SESSION.md`** — prioritised next steps
-- **`docs/adr/`** — 15 ADRs covering every major architectural decision (000–015)
+- **`docs/adr/`** — 23 ADRs covering every major architectural decision (000–023)
 
 Always read existing ADRs before making architectural changes.
 
@@ -62,6 +61,11 @@ Fonts:         Playfair Display (headings), Inter (UI)
 Shadow:        0 2px 12px rgba(26,26,26,0.08)
 ```
 
+### Project Options & Canvas
+Project Options (`/projects/[id]/options`) uses `project_options` table — one spec per project, unique constraint. Sub-navigation lives inside `ProjectNav` as inline items (not a separate sidebar panel). See ADR 023.
+
+Canvas images (`CanvasImageShape`) and spec cards (`SpecCardShape`) are distinct custom tldraw shapes — do not conflate them. See ADR 018.
+
 ## What NOT to do without planning first
 
 - Drop or rename the `/specs/[id]` standalone page
@@ -70,3 +74,4 @@ Shadow:        0 2px 12px rgba(26,26,26,0.08)
 - Replace hand-written `database.ts` with CLI-generated types
 - Add new tables without RLS policies
 - Use `NEXT_PUBLIC_` for anything secret
+- Add a third sidebar panel to project pages — sub-nav always goes inside the existing `ProjectNav`

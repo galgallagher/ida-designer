@@ -9,7 +9,7 @@ import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { getCurrentStudioId } from "@/lib/studio-context";
 import AppShell from "@/components/AppShell";
-import { Layers, Users, ChevronRight, BookUser, Briefcase, Palette, LayoutList } from "lucide-react";
+import { Layers, Users, ChevronRight, BookUser, Briefcase } from "lucide-react";
 
 const sections = [
   {
@@ -17,18 +17,6 @@ const sections = [
     icon: Layers,
     title: "Spec Categories",
     description: "Add, rename, reorder and deactivate the categories in your spec library.",
-  },
-  {
-    href: "/settings/schedules",
-    icon: LayoutList,
-    title: "Schedule Types",
-    description: "Control which schedule types appear in projects, rename them, and set their order.",
-  },
-  {
-    href: "/settings/finishes",
-    icon: Palette,
-    title: "Finish Palette",
-    description: "Define the finish codes used across drawings and specifications (e.g. WD-01, FB-03).",
   },
   {
     href: "/settings/contacts",

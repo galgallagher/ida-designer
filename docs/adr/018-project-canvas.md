@@ -1,6 +1,6 @@
 # ADR 018 — Project Canvas
 
-**Status:** Accepted  
+**Status:** Accepted (updated 2026-04-27 — CanvasImageShape + project_images added)
 **Date:** 2026-04-15
 
 ## Context
@@ -25,13 +25,19 @@ Multiple canvases per project are supported from day one via `project_id` + `nam
 
 ### Image storage
 
-Images dropped onto canvases are uploaded to a `canvas-images` Supabase Storage bucket (public, same pattern as `spec-images`). Path convention: `{studio_id}/{canvas_id}/{asset_id}.{ext}`.
+Images dropped or pasted onto canvases are uploaded to a `canvas-images` Supabase Storage bucket (public, same pattern as `spec-images`). Path convention: `{studio_id}/{canvas_id}/{filename}`.
 
-### Spec URL cards (custom shape)
+Each uploaded image is also recorded in the `project_images` table (`project_id`, `studio_id`, `canvas_id`, `storage_path`, `url`, `type`). The `type` column is `inspiration | sketch` — set when the user tags the image via the eye button on the canvas shape. This record is what surfaces the image in Project Options.
 
-When a user pastes a product URL onto the canvas, we create a custom tldraw shape (`SpecCardShape`) that fires the existing scrape-spec pipeline and renders a rich product card — image, name, brand, price — directly on the canvas. Same underlying infrastructure as the Ida chat widget, different surface.
+### Custom shapes
 
-These cards are not formal project specs. No conversion to `project_specs` at this stage — the canvas is pure inspiration space.
+Two distinct custom tldraw shapes serve different purposes on the canvas:
+
+**`SpecCardShape`** — created when a spec is placed from the "Add from Library" picker or via the Ida widget scrape flow. Renders a rich product card (image, name, code). Has an ⓘ button to toggle a detail footer and an arrow button to open the full spec modal. These cards link to a `project_options` row — removing the spec from Project Options deletes all matching `SpecCardShape` instances from every canvas via server-side JSON patching.
+
+**`CanvasImageShape`** — created when a user pastes or drops an image file directly onto the canvas. Stores an `imageId` prop linking to a `project_images` DB row. Has an eye button (dropdown) to tag the image as **Inspiration** or **Sketch**. Tagged images appear in Project Options under the matching section. Deleting an image from Project Options removes the DB row, the Storage file, and patches out the shape from canvas JSON.
+
+The two shapes are intentionally separate: spec cards are structured library items; canvas images are freeform visual references.
 
 ### Persistence
 

@@ -29,7 +29,7 @@ export default function SpecDetailModal({ specId, onClose }: Props) {
   const [deleteError, setDeleteError] = useState<string | null>(null);
   const [lightboxOpen, setLightboxOpen] = useState(false);
 
-  // Add to project state
+  // Add to options state
   const [addToProjectOpen, setAddToProjectOpen] = useState(false);
   const [activeProjects, setActiveProjects] = useState<{ id: string; name: string; code: string | null }[]>([]);
   const [selectedProjectId, setSelectedProjectId] = useState("");
@@ -352,7 +352,7 @@ export default function SpecDetailModal({ specId, onClose }: Props) {
                   </a>
                 )}
 
-                {/* Add to project button */}
+                {/* Add to options button */}
                 {spec && activeProjects.length > 0 && (
                   <button
                     type="button"
@@ -370,7 +370,7 @@ export default function SpecDetailModal({ specId, onClose }: Props) {
                     }}
                   >
                     <FolderPlus size={12} />
-                    Add to project
+                    Add to options
                   </button>
                 )}
 
@@ -630,14 +630,14 @@ export default function SpecDetailModal({ specId, onClose }: Props) {
                   </div>
                 )}
 
-                {/* Add to project inline form */}
+                {/* Add to options inline form */}
                 {addToProjectOpen && (
                   <form
                     onSubmit={handleAddToProject}
                     style={{ marginTop: 16, padding: "14px 16px", backgroundColor: "#FAFAF9", borderRadius: 12, border: "1.5px solid #E4E1DC" }}
                   >
                     <p style={{ fontFamily: "var(--font-inter), sans-serif", fontSize: 11, fontWeight: 700, color: "#9A9590", textTransform: "uppercase", letterSpacing: "0.07em", marginBottom: 10 }}>
-                      Add to project library
+                      Add to options options
                     </p>
 
                     {/* Project picker */}

@@ -8,7 +8,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { ArrowLeft, LayoutDashboard, ImageIcon, Package, Users, Settings, ClipboardList, Palette } from "lucide-react";
+import { ArrowLeft, LayoutDashboard, Package, Users, Settings, Palette } from "lucide-react";
 import type { ProjectStatus } from "@/types/database";
 
 const statusConfig: Record<ProjectStatus, { dot: string; label: string }> = {
@@ -25,12 +25,19 @@ interface ProjectNavSection {
   soon?: boolean;
 }
 
+interface OptionsSubNav {
+  categories: { label: string; count: number }[];
+  inspirationCount: number;
+  sketchCount: number;
+}
+
 interface ProjectNavProps {
   projectId: string;
   projectName: string;
   projectCode: string | null;
   projectStatus: ProjectStatus;
   clientName: string;
+  optionsSubNav?: OptionsSubNav;
 }
 
 export default function ProjectNav({
@@ -39,18 +46,17 @@ export default function ProjectNav({
   projectCode,
   projectStatus,
   clientName,
+  optionsSubNav,
 }: ProjectNavProps) {
   const pathname = usePathname();
   const base = `/projects/${projectId}`;
 
   const sections: ProjectNavSection[] = [
-    { label: "Overview",  href: base,                  icon: LayoutDashboard },
-    { label: "Canvas",         href: `${base}/canvas`,   icon: Palette },
-    { label: "Drawings",       href: `${base}/drawings`, icon: ImageIcon },
-    { label: "Project Library", href: `${base}/specs`,   icon: Package },
-    { label: "Specs",          href: `${base}/specs/schedule`, icon: ClipboardList },
-    { label: "Team",           href: `${base}/team`,    icon: Users },
-    { label: "Settings",       href: `${base}/settings`, icon: Settings },
+    { label: "Overview",         href: base,               icon: LayoutDashboard },
+    { label: "Canvas",           href: `${base}/canvas`,   icon: Palette },
+    { label: "Project Options",  href: `${base}/options`,  icon: Package },
+    { label: "Team",             href: `${base}/team`,     icon: Users },
+    { label: "Settings",         href: `${base}/settings`, icon: Settings },
   ];
 
   const status = statusConfig[projectStatus] ?? statusConfig.archived;
@@ -94,8 +100,6 @@ export default function ProjectNav({
       {/* Nav sections */}
       <nav className="flex flex-col gap-0.5 px-2 flex-1">
         {sections.map((section) => {
-          // Use exact match if another section is a child of this href,
-          // to prevent the parent from staying active when the child is open.
           const hasChildSection = sections.some(
             (s) => s.href !== section.href && s.href.startsWith(section.href + "/")
           );
@@ -104,6 +108,7 @@ export default function ProjectNav({
             : hasChildSection
               ? pathname === section.href
               : pathname.startsWith(section.href);
+          const isOptions = section.href === `${base}/options`;
           const Icon = section.icon;
 
           return (
@@ -120,22 +125,57 @@ export default function ProjectNav({
                   </span>
                 </div>
               ) : (
-                <Link
-                  href={section.href}
-                  className={`flex items-center gap-2.5 px-3 py-2 transition-colors ${isActive ? "bg-white" : "hover:bg-black/[0.04]"}`}
-                  style={{
-                    borderRadius: 8,
-                    textDecoration: "none",
-                    boxShadow: isActive ? "0 1px 6px rgba(26,26,26,0.07)" : "none",
-                    color: isActive ? "#1A1A1A" : "#9A9590",
-                    fontFamily: "var(--font-inter), sans-serif",
-                    fontSize: 13,
-                    fontWeight: isActive ? 600 : 400,
-                  }}
-                >
-                  <Icon size={15} style={{ flexShrink: 0 }} />
-                  {section.label}
-                </Link>
+                <>
+                  <Link
+                    href={section.href}
+                    className={`flex items-center gap-2.5 px-3 py-2 transition-colors ${isActive ? "bg-white" : "hover:bg-black/[0.04]"}`}
+                    style={{
+                      borderRadius: 8,
+                      textDecoration: "none",
+                      boxShadow: isActive ? "0 1px 6px rgba(26,26,26,0.07)" : "none",
+                      color: isActive ? "#1A1A1A" : "#9A9590",
+                      fontFamily: "var(--font-inter), sans-serif",
+                      fontSize: 13,
+                      fontWeight: isActive ? 600 : 400,
+                    }}
+                  >
+                    <Icon size={15} style={{ flexShrink: 0 }} />
+                    {section.label}
+                  </Link>
+
+                  {/* Sub-nav: shown when on Project Options */}
+                  {isOptions && isActive && optionsSubNav && (
+                    <div className="flex flex-col gap-0.5 mt-0.5 mb-1" style={{ paddingLeft: 28 }}>
+                      {optionsSubNav.categories.map(({ label, count }) => (
+                        <Link
+                          key={label}
+                          href={`${base}/options?s=${encodeURIComponent(label)}`}
+                          className="flex items-center justify-between px-2 py-1 rounded-md transition-colors hover:bg-black/[0.04]"
+                          style={{ textDecoration: "none", fontFamily: "var(--font-inter), sans-serif", fontSize: 12, color: "#9A9590" }}
+                        >
+                          <span className="truncate">{label}</span>
+                          {count > 0 && <span style={{ fontSize: 11, color: "#C0BEBB", flexShrink: 0, marginLeft: 4 }}>{count}</span>}
+                        </Link>
+                      ))}
+                      <Link
+                        href={`${base}/options?s=inspiration`}
+                        className="flex items-center justify-between px-2 py-1 rounded-md transition-colors hover:bg-black/[0.04]"
+                        style={{ textDecoration: "none", fontFamily: "var(--font-inter), sans-serif", fontSize: 12, color: "#9A9590" }}
+                      >
+                        <span>Inspiration</span>
+                        {optionsSubNav.inspirationCount > 0 && <span style={{ fontSize: 11, color: "#C0BEBB", flexShrink: 0, marginLeft: 4 }}>{optionsSubNav.inspirationCount}</span>}
+                      </Link>
+                      <Link
+                        href={`${base}/options?s=sketch`}
+                        className="flex items-center justify-between px-2 py-1 rounded-md transition-colors hover:bg-black/[0.04]"
+                        style={{ textDecoration: "none", fontFamily: "var(--font-inter), sans-serif", fontSize: 12, color: "#9A9590" }}
+                      >
+                        <span>Sketches</span>
+                        {optionsSubNav.sketchCount > 0 && <span style={{ fontSize: 11, color: "#C0BEBB", flexShrink: 0, marginLeft: 4 }}>{optionsSubNav.sketchCount}</span>}
+                      </Link>
+                    </div>
+                  )}
+                </>
               )}
             </div>
           );

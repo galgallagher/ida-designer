@@ -45,21 +45,27 @@ export async function POST(req: Request) {
 
   if (!spec) return Response.json({ error: "Spec not found in your library" }, { status: 404 });
 
-  const { error: insertError } = await supabase.from("project_specs").insert({
+  // Check for existing entry before inserting to prevent duplicates.
+  const { data: existing } = await supabase
+    .from("project_options")
+    .select("id")
+    .eq("project_id", project_id)
+    .eq("spec_id", spec_id)
+    .maybeSingle();
+
+  if (existing) return Response.json({ ok: true, already_in_project: true });
+
+  const { error: insertError } = await supabase.from("project_options").insert({
     project_id,
     studio_id: studioId,
     spec_id,
-    item_type: null,
     status: "draft",
     drawing_id: null,
     notes: null,
   });
 
   if (insertError) {
-    // Unique constraint = already in project — treat as success
-    if (insertError.code === "23505") {
-      return Response.json({ ok: true, already_in_project: true });
-    }
+    if (insertError.code === "23505") return Response.json({ ok: true, already_in_project: true });
     return Response.json({ error: insertError.message }, { status: 500 });
   }
 

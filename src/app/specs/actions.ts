@@ -321,7 +321,7 @@ export async function getSpecDetail(id: string): Promise<SpecDetailData | null> 
 
   // Projects this spec has been added to
   const { data: projectSpecData } = await supabase
-    .from("project_specs")
+    .from("project_options")
     .select("project_id")
     .eq("spec_id", id);
 
@@ -393,7 +393,7 @@ export async function deleteSpec(specId: string): Promise<{ error?: string }> {
 
   // Block deletion if this spec is used in any project
   const { count } = await supabase
-    .from("project_specs")
+    .from("project_options")
     .select("*", { count: "exact", head: true })
     .eq("spec_id", specId);
 
@@ -417,7 +417,7 @@ export async function deleteSpec(specId: string): Promise<{ error?: string }> {
   return {};
 }
 
-// ── Get active projects for "Add to project" picker ───────────────────────────
+// ── Get active projects for "Add to options" picker ───────────────────────────
 
 export async function getActiveProjects(): Promise<
   { id: string; name: string; code: string | null }[]
@@ -436,7 +436,7 @@ export async function getActiveProjects(): Promise<
   return data ?? [];
 }
 
-// ── Add spec to project library from the spec detail modal ────────────────────
+// ── Add spec to project options from the spec detail modal ────────────────────
 
 export async function addSpecToProjectFromLibrary(
   specId: string,
@@ -460,11 +460,10 @@ export async function addSpecToProjectFromLibrary(
     .from("projects").select("id, studio_id").eq("id", projectId).eq("studio_id", studioId).single();
   if (!project) return { error: "Project not found." };
 
-  const { error: dbError } = await supabase.from("project_specs").insert({
+  const { error: dbError } = await supabase.from("project_options").insert({
     project_id: projectId,
     studio_id: studioId,
     spec_id: specId,
-    item_type: itemType,
     status: "draft",
   });
 

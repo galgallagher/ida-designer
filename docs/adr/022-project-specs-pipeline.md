@@ -1,8 +1,10 @@
 # ADR 022 — Project Specs Pipeline
 
-**Status:** Accepted  
+**Status:** Superseded by ADR 023  
 **Date:** 2026-04-27  
 **Supersedes:** ADR 020 (project spec codes), ADR 021 (permanent spec slots)
+
+> This ADR described a planned 3-stage pipeline (Studio Library → Project Library → Schedule) with project codes, `item_type`, and a formal `project_specs` schedule table. This architecture was not implemented. The actual system uses a simpler `project_options` table — see ADR 023.
 
 ## Context
 

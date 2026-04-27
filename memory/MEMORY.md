@@ -1,7 +1,7 @@
 # Ida Designer — Project Memory
 
 > Keep this file under 200 lines. Update it as the project evolves.
-> Last updated: 2026-04-17 (session 12)
+> Last updated: 2026-04-27 (session 13)
 
 ## What is this project?
 
@@ -9,9 +9,15 @@ A SaaS platform for interior design studios. Studios manage clients, projects, d
 
 ## Current phase
 
-**Session 12.** Project Canvas shipped and merged to `main`. Follow-up this session: fixed the canvas PDF export dropping supplier images — server-side image re-hosting + client-side data-URI embedding in `SpecCardShape.toSvg` + one-off backfill script (ADR 019). Also surfaced real Ida chat errors instead of the generic "An error occurred" chip.
+**Session 13.** This session built the Project Options & Images system end-to-end:
+- `project_images` table + Storage (`canvas-images` bucket) for pasted/dropped canvas images
+- `CanvasImageShape` custom tldraw shape — eye/tag button to mark images as Inspiration or Sketch
+- Project Options page redesigned: left-nav sub-items (categories + Inspiration/Sketches) matching Studio Library pattern
+- Deleting from Project Options removes all matching spec-card shapes from every canvas
+- Deleting from Images section removes image from project_images, Storage, and canvas JSON
+- Unique constraint added to `project_options (project_id, spec_id)`
 
-Previous: Session 11 — loading skeletons, "Spec Library" → "Product Library" rename, Finishes Library, schedule UX overhaul.
+Previous: Session 12 — canvas PDF export fix (base64 image embedding), Ida error surfacing.
 
 ## Tech stack
 
@@ -42,23 +48,21 @@ Previous: Session 11 — loading skeletons, "Spec Library" → "Product Library"
 - **Platform:** `profiles`
 - **Studio:** `studios`, `studio_members`, `studio_roles`
 - **Project CRM:** `clients`, `contacts`
-- **Project:** `projects`, `project_options`, `project_canvases`, `drawings`, `drawing_hotspots`, `project_specs`, `project_members`
+- **Project:** `projects`, `project_options`, `project_canvases`, `project_images`, `drawings`, `drawing_hotspots`, `project_members`
 - **Specs:** `spec_categories`, `spec_templates`, `spec_template_fields`, `specs`, `spec_field_values`, `spec_tags`, `spec_suppliers`
 - **Global library:** `global_specs`, `global_spec_fields`, `global_spec_tags`
 - **Contacts CRM:** `contact_categories`, `contact_companies`, `contact_people`, `contact_tags`
+- **Finishes:** `studio_materials`, `studio_finishes`
 
-Migrations run: `001` → `037` applied to DB.
+Migrations applied: `001` → `044`.
 
-**Migration 038 (apply manually via Supabase SQL editor):**
-`supabase/migrations/038_project_canvases.sql` — `project_canvases` table + RLS + `canvas-images` storage bucket.
+Notable migrations: 038 (project_canvases + canvas-images bucket), 043 (project_images), 044 (unique constraint project_options).
 
 ## Live environment
 
 - **URL:** http://localhost:3001 (dev — `npm run dev`, port 3001 hardcoded)
 - **Supabase project ref:** read from `NEXT_PUBLIC_SUPABASE_URL` in `.env.local`
 - **MCP Supabase tool is connected to a DIFFERENT project** — use direct SQL editor at supabase.com
-- **Dev super-admin profile ID:** kept in local `.env.local` / psql memory
-- **Test Studio ID:** kept in local `.env.local` / psql memory
 
 ## File structure (key files)
 
@@ -66,82 +70,47 @@ Migrations run: `001` → `037` applied to DB.
 src/
   app/
     specs/
-      page.tsx                — server: enriches specs with variantCount
-      SpecLibraryClient.tsx   — EnrichedSpec has code, variant_group_id, variantCount
-      SpecDetailModal.tsx     — shows code, "Other colorways" siblings section
-      actions.ts              — getSpecDetail returns variantSiblings[]
-    contacts/
-      ContactsClient.tsx      — rows/cards toggle, CompanyCard grid view
-      ContactDetailPanel.tsx  — shows linked library specs at bottom
-      actions.ts              — getSupplierSpecs(companyId)
+      SpecLibraryClient.tsx   — category sidebar, card grid, search
+      SpecDetailModal.tsx     — modal overlay for spec detail
     projects/[id]/
-      layout.tsx              — includes <IdaWidget projectId= projectName= />
-      loading.tsx             — skeleton for fast navigation
+      layout.tsx              — fetches project + optionsSubNav data, renders ProjectNav + IdaWidget
       canvas/
-        page.tsx              — server: fetches canvases, auto-creates default
-        ProjectCanvasClient.tsx — multi-canvas tabs, toolbar, tldraw wrapper, sheet dropdown, PDF export
-        TldrawCanvas.tsx      — tldraw integration, auto-save, image upload, snap mode on
-        SpecCardShape.tsx     — custom tldraw shape for product cards (component + toSvg for export)
-        LibraryPickerModal.tsx — "Add from Library" searchable grid
-        exportPdf.ts          — frames → multi-page PDF via pdf-lib (client-side)
-        actions.ts            — CRUD canvases, save content, upload images, getLibrarySpecs
-        loading.tsx
-      specs/
-        page.tsx              — fetches specs with code + category_name
-        ProjectSpecsClient.tsx — cards show code, click opens SpecDetailModal
-        loading.tsx
+        TldrawCanvas.tsx      — tldraw, auto-save, image upload, files handler
+        SpecCardShape.tsx     — spec product card shape (ⓘ button, open-modal)
+        CanvasImageShape.tsx  — pasted/dropped image shape (eye/tag button → inspiration|sketch)
+        LibraryPickerModal.tsx
+        exportPdf.ts
+        actions.ts            — CRUD canvases, uploadCanvasImage, tagProjectImage, deleteProjectImage
+      options/
+        page.tsx              — fetches project_options + project_images + specs, reads ?s= param
+        ProjectOptionsClient.tsx — full-width content, section driven by URL ?s= param
+        actions.ts            — addSpecToProject, removeSpecFromProject (patches canvases)
     api/ida/
-      route.ts                — passes projectId/projectName to system prompt
-      save/route.ts           — saves code, variant_group_id, global_spec_id
-      add-to-project/route.ts — adds spec to project, calls router.refresh()
+      route.ts                — projectId/projectName in system prompt
+      add-to-project/route.ts — adds spec to project_options
   components/
-    IdaWidget.tsx             — accepts projectId/projectName props; SpecResult has code/colorway/variant_group_id; router.refresh() after add-to-project
+    ProjectNav.tsx            — sub-nav under Project Options (categories + Inspiration/Sketches)
+    IdaWidget.tsx
   lib/
-    ida/
-      skills/scrape-spec.ts   — extracts colorway, assembles "Name · Colorway", detects variant siblings by URL base path
-      system-prompt.ts        — injects project context block
-  types/database.ts           — SpecRow has code, variant_group_id; GlobalSpecRow has code
+    ida/skills/               — scrape-spec, save-spec, create-category, search-specs
+  types/database.ts           — ProjectImageRow, ProjectImageType added
 ```
 
-## Project Canvas (migration 038, ADR 018)
+## Project Options (ADR 023)
 
-Freeform tldraw canvas for project inspiration. Multiple named canvases per project. Canvas state stored as tldraw JSON snapshot in `project_canvases.content` (JSONB). Images uploaded to `canvas-images` Supabase Storage bucket. Auto-save debounced at 1.5s. Canvas tab in ProjectNav after Overview. tldraw lazy-loaded via `next/dynamic`.
+`project_options` is a simple consideration list — one row per spec per project (unique constraint). No project codes, no formal schedule. Specs are added from the studio library. Removing a spec from Project Options also removes all matching `spec-card` shapes from every canvas in the project.
 
-**Shipped (merged to `main`):**
-- Multi-canvas tabs (create, rename, delete)
-- URL scrape → `/api/canvas/scrape-and-add` (Firecrawl/Jina + Haiku) → save to library → add to project → place `spec-card` shape
-- "Add from Library" picker modal — searchable grid of studio specs, click to drop on canvas
-- Custom `spec-card` shape (`SpecCardShape.tsx`): image + optional text footer + info toggle button + open-modal button; `toSvg` override strips buttons for exports
-- Snap-mode ON by default (`editor.user.updateUserPreferences({ isSnapMode: true })`) — Figma-style edge/centre/gap snapping
-- Font overrides via CSS vars `--tl-font-{draw,sans,serif,mono}` → Playfair + Inter
-- "Add sheet" dropdown (A4/A3 portrait/landscape) — creates native tldraw frame shapes at true print dimensions (96 DPI pixel mapping)
-- "Export PDF" — rasterises each frame via `editor.toImage()`, embeds into multi-page PDF via `pdf-lib` (lazy-loaded), one page per frame at true mm size
-- StylePanel moved to left via CSS `order` override so it doesn't collide with Ida widget
+`project_images` stores images dropped/pasted onto canvases, tagged as `inspiration` or `sketch`. Deleting from Project Options > Images removes from DB, Storage, and canvas JSON. Tagging an image updates the shape props in tldraw + the DB record.
 
-**PDF export images (ADR 019):** supplier images are re-hosted on the `spec-images` bucket at scrape time via `src/lib/ida/download-image.ts`. The real failure mode turned out to be that browsers refuse to fetch any external resource referenced inside a `<foreignObject>` when the SVG is loaded as an Image src — so `SpecCardShape.toSvg` is async and pre-fetches the image, base64-encodes it, and embeds it as a data URI inline in the SVG. Backfill script at `scripts/backfill-spec-images.ts` (run via `npm run backfill:spec-images`) migrated pre-fix specs. Migration 039 NOT needed — reused the existing `spec-images` bucket from migration 020.
+The Project Options left-nav (in ProjectNav) shows sub-items for each category + Inspiration/Sketches, using `?s=` URL param for the active section. The project layout fetches this sub-nav data in parallel.
 
-## Spec codes & colorway variants (migration 035–036)
+## Project Canvas (ADR 018)
 
-- `specs.code` — product reference/SKU e.g. "8086/02". Haiku extracts it. Shown on cards and in modal.
-- `specs.variant_group_id` — shared UUID between colorway siblings. Detected by URL base path match (strip last segment, LIKE query). Name assembled as "Otillo · Clay" when `colorway` is extracted by Haiku.
-- Detail modal shows "Other colorways" section as thumbnail chips linking to sibling spec pages.
+Freeform tldraw canvas. Multiple canvases per project. Canvas state stored as tldraw JSON in `project_canvases.content` (JSONB). Two custom shapes:
+- `SpecCardShape` — spec product cards from library/scrape (ⓘ info toggle, open-spec-modal button)
+- `CanvasImageShape` — pasted/dropped images (eye button dropdown → tag as inspiration/sketch)
 
-## Global spec library (migrations 025–026)
-
-Cross-studio product cache. `global_specs` → scraped once, reused across all studios. Studio specs gain `global_spec_id` FK. `from_global: true` path skips Firecrawl. Service role client required for global writes.
-
-## Supplier auto-linking (scrape-spec.ts)
-
-Company name derived from URL domain (not product brand). Resolution order:
-1. Domain match against `contact_companies.website`
-2. Brand name exact match
-3. Auto-create from domain name (e.g. "justfabrics.co.uk" → "Just Fabrics")
-
-Auto-created companies assigned to "Suppliers" category via `ilike("name", "supplier%")`.
-
-## Project library (real-time)
-
-After "Add to [project] library" in chat widget: `router.refresh()` triggers Next.js server component re-fetch — card appears without page reload.
+Images upload to `canvas-images` bucket. Auto-save debounced at 1.5s. PDF export via pdf-lib (frames → multi-page PDF). Spec images are base64-encoded inline in SVG for PDF export (ADR 019).
 
 ## Design tokens
 
@@ -159,8 +128,8 @@ Shadow:        0 2px 12px rgba(26,26,26,0.08)
 - `CategoriesClient.tsx` ~918 lines — needs splitting
 - `ContactDetailPanel.tsx` ~612 lines — needs splitting
 - Duplicate `AddProjectModal.tsx` in `/projects/` and `/clients/[id]/` — needs merging
-- `src/types/database.ts` hand-written — replace with `supabase gen types` when schema stabilises
-- Delete-then-insert for field values/tags is non-atomic — needs RPC transaction eventually
+- `src/types/database.ts` hand-written — not replaced until schema stabilises
+- Delete-then-insert for field values/tags is non-atomic
 
 ## Do NOT do without planning
 
@@ -169,3 +138,4 @@ Shadow:        0 2px 12px rgba(26,26,26,0.08)
 - Merge clients + contacts CRM (ADRs 008 + 010)
 - Replace hand-written database types without planning
 - Add new tables without RLS policies
+- Add a third nav panel to project pages — sub-nav goes inside ProjectNav as inline items

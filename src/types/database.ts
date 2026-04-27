@@ -2,12 +2,7 @@
  * TypeScript types for the Ida Designer database schema.
  *
  * These mirror the tables defined in supabase/migrations/.
- * When you change the schema, update this file too — or better, use the
- * Supabase CLI to auto-generate it: `npx supabase gen types typescript`
- *
- * Usage:
- *   import type { Database } from "@/types/database"
- *   import type { Tables } from "@/types/database"   // shorthand for rows
+ * When you change the schema, update this file too.
  */
 
 // ── JSON type (used for jsonb columns) ────────────────────────────────────
@@ -19,7 +14,6 @@ export type PlatformRole = "super_admin" | "studio_member";
 export type StudioMemberRole = "owner" | "admin" | "designer" | "viewer";
 export type SubscriptionStatus = "trial" | "active" | "past_due" | "cancelled";
 export type ProjectStatus = "active" | "on_hold" | "completed" | "archived";
-export type HotspotType = "drawing_link" | "spec_pin";
 export type FieldType =
   | "text"
   | "textarea"
@@ -34,30 +28,11 @@ export type SpecStatus =
   | "approved"
   | "ordered"
   | "delivered";
-// Drawing type — the three drawing categories used in design schedules (migration 029)
-export type DrawingType = "arch_id" | "joinery" | "ffe";
-// System-defined schedule type keys — the built-in schedule classifications.
-// After migration 034, item_type columns are text so custom studio schedules
-// (keyed by UUID) are also valid values. Use SystemSpecItemType where you
-// need exhaustive matching against known values only.
-export type SystemSpecItemType =
-  | "ffe"
-  | "ironmongery"
-  | "sanitaryware"
-  | "joinery"
-  | "arch_id_finishes"
-  | "joinery_finishes"
-  | "ffe_finishes";
-
-// SpecItemType allows both system keys and custom UUID keys.
-// The (string & {}) intersection prevents TypeScript collapsing this to plain
-// string, preserving autocomplete on the known system values.
-export type SpecItemType = SystemSpecItemType | (string & {});
 
 // ── Row types — what you get back when you SELECT from a table ─────────────
 
 export type ProfileRow = {
-  id: string; // uuid — matches auth.users.id
+  id: string;
   first_name: string | null;
   last_name: string | null;
   platform_role: PlatformRole;
@@ -78,12 +53,12 @@ export type StudioRow = {
 export type StudioMemberRow = {
   id: string;
   studio_id: string;
-  user_id: string | null;       // null = pending (not yet invited/signed up)
+  user_id: string | null;
   role: StudioMemberRole;
-  studio_role_id: string | null; // FK → studio_roles.id (configurable job title)
-  email: string | null;         // stored for pending members (no auth account yet)
-  first_name: string | null;    // stored for pending members
-  last_name: string | null;     // stored for pending members
+  studio_role_id: string | null;
+  email: string | null;
+  first_name: string | null;
+  last_name: string | null;
   created_at: string;
 };
 
@@ -136,34 +111,6 @@ export type ContactRow = {
   updated_at: string;
 };
 
-export type DrawingRow = {
-  id: string;
-  project_id: string;                 // LEGACY — kept during transition; drop in migration 033
-  studio_id: string | null;           // new (migration 031) — denormalised for RLS
-  drawing_type: DrawingType | null;   // new (migration 031)
-  name: string;
-  file_url: string | null;
-  file_path: string | null;
-  category: string | null;            // LEGACY free-text; drawing_type replaces this
-  order_index: number;
-  canvas_width: number | null;
-  canvas_height: number | null;
-  created_at: string;
-  updated_at: string;
-};
-
-export type DrawingHotspotRow = {
-  id: string;
-  drawing_id: string;
-  hotspot_type: HotspotType;
-  target_drawing_id: string | null;
-  project_spec_id: string | null;
-  x: number;
-  y: number;
-  label: string | null;
-  created_at: string;
-};
-
 export type SpecTemplateRow = {
   id: string;
   studio_id: string;
@@ -179,7 +126,7 @@ export type SpecTemplateFieldRow = {
   template_id: string;
   name: string;
   field_type: FieldType;
-  options: string[] | null; // jsonb — array of strings for 'select' type
+  options: string[] | null;
   is_required: boolean;
   order_index: number;
   ai_hint: string | null;
@@ -192,13 +139,13 @@ export type SpecRow = {
   template_id: string;
   category_id: string | null;
   name: string;
-  code: string | null;             // product/reference code e.g. "8086/02" (migration 035)
-  variant_group_id: string | null; // shared UUID for colorway siblings (migration 036)
+  code: string | null;
+  variant_group_id: string | null;
   description: string | null;
   image_url: string | null;
   image_path: string | null;
   source_url: string | null;
-  global_spec_id: string | null;  // FK to global_specs (migration 026)
+  global_spec_id: string | null;
   cost_from: number | null;
   cost_to: number | null;
   cost_unit: string | null;
@@ -273,7 +220,7 @@ export type SpecTagRow = {
 
 export type SpecSupplierRow = {
   spec_id: string;
-  supplier_id: string; // references contact_companies.id
+  supplier_id: string;
   supplier_code: string | null;
   unit_cost: number | null;
 };
@@ -286,19 +233,19 @@ export type SpecFieldValueRow = {
   created_at: string;
 };
 
-export type ProjectSpecRow = {
+// ── Project Options (migration 042, renamed from project_specs) ───────────────
+// One row per spec added to a project. The spec comes from the studio library.
+
+export type ProjectOptionRow = {
   id: string;
-  project_id: string;                  // LEGACY — kept during transition; drop in migration 033
-  studio_id: string | null;            // denormalised for RLS
-  spec_id: string | null;              // null = empty slot (spec detached, code retained) — migration 040
+  project_id: string;
+  studio_id: string | null;
+  spec_id: string | null;
   drawing_id: string | null;
-  item_type: string | null;            // schedule type e.g. "ffe", "joinery"
   quantity: number | null;
-  unit: string | null;                 // e.g. "m²" — TODO: auto-populate from scraper
+  unit: string | null;
   notes: string | null;
   status: SpecStatus;
-  project_code: string | null;          // e.g. "FB01" — allocated at schedule assignment (migration 039)
-  project_price: number | null;         // project-specific price override (migration 040)
   created_at: string;
   updated_at: string;
 };
@@ -315,15 +262,15 @@ export type ProjectMemberRow = {
   created_at: string;
 };
 
-// ── Global library (migration 025) ────────────────────────────────────────────
+// ── Global library ─────────────────────────────────────────────────────────────
 
 export type GlobalSpecRow = {
   id: string;
-  source_url: string;     // UTM-stripped canonical URL — unique dedup key
+  source_url: string;
   name: string;
-  code: string | null;    // product/reference code (migration 035)
+  code: string | null;
   brand_name: string | null;
-  brand_domain: string | null;  // e.g. "johnlewis.com" (no www)
+  brand_domain: string | null;
   description: string | null;
   image_url: string | null;
   cost_from: number | null;
@@ -347,25 +294,7 @@ export type GlobalSpecTagRow = {
   tag: string;
 };
 
-// ── Studio Finishes (migration 028) ───────────────────────────────────────────
-
-export type StudioFinishRow = {
-  id: string;
-  studio_id: string;
-  code: string;           // e.g. "WD-01", "FB-03", "MT-07"
-  name: string;           // e.g. "White Oak Veneer"
-  description: string | null;
-  colour_hex: string | null;   // e.g. "#C4A882" — UI swatch
-  image_url: string | null;
-  image_path: string | null;
-  global_spec_id: string | null;  // optional FK to Global Material Library
-  created_at: string;
-  updated_at: string;
-};
-
-// ── Studio Materials — Finishes Library (migration 035) ──────────────────────
-// One row per material per studio. Seeded from seed_default_studio_materials().
-// Distinct from StudioFinishRow (migration 028) which is for drawing finish codes.
+// ── Studio Materials — Finishes/Materials Library ─────────────────────────────
 
 export type MaterialCategory = 'wood' | 'stone' | 'metal' | 'glass' | 'concrete';
 
@@ -384,73 +313,43 @@ export type StudioMaterialRow = {
   name: string;
   description: string | null;
   image_url: string | null;
-  image_path: string | null;   // storage path for deletion
+  image_path: string | null;
   sort_order: number;
   created_at: string;
   updated_at: string;
 };
 
-// ── Drawing Finishes junction (migration 029) ─────────────────────────────────
+// ── Project Images ────────────────────────────────────────────────────────────
 
-export type DrawingFinishRow = {
-  drawing_id: string;
-  studio_finish_id: string;
-  studio_id: string;
-  order_index: number;
-  notes: string | null;
-  created_at: string;
-};
+export type ProjectImageType = "inspiration" | "sketch";
 
-// ── Studio Spec Preferences (migration 030) ───────────────────────────────────
-
-export type StudioSpecPreferenceRow = {
-  id: string;
-  studio_id: string;
-  item_type: string;             // text after migration 034 (was spec_item_type enum)
-  is_visible: boolean;
-  display_name: string | null;   // optional label override (or name for custom schedules)
-  sort_order: number;
-  is_custom: boolean;            // true = studio-created; false = system default (migration 034)
-  created_at: string;
-  updated_at: string;
-};
-
-// ── Project Schedule Preferences (migration 037) ──────────────────────────────
-// Per-project schedule config. Falls back to studio_spec_preferences when empty.
-
-export type ProjectSchedulePreferenceRow = {
+export type ProjectImageRow = {
   id: string;
   project_id: string;
   studio_id: string;
-  item_type: string;
-  display_name: string | null;
-  is_visible: boolean;
-  is_custom: boolean;
-  sort_order: number;
+  canvas_id: string | null;
+  storage_path: string;
+  url: string;
+  type: ProjectImageType;
   created_at: string;
 };
 
-// ── Project Canvases (migration 038) ─────────────────────────────────────────
-// Freeform visual canvas for project inspiration. Content is a tldraw JSON snapshot.
+// ── Project Canvases ──────────────────────────────────────────────────────────
 
 export type ProjectCanvasRow = {
   id: string;
   studio_id: string;
   project_id: string;
   name: string;
-  content: Json;               // tldraw snapshot — opaque JSONB
+  content: Json;
   thumbnail_url: string | null;
   order_index: number;
   created_at: string;
   updated_at: string;
 };
 
-// ── Insert types — what you pass when creating a new row ──────────────────
-// (omit id, created_at, updated_at — Postgres generates these)
-//
-// Insertable<T> mirrors what `supabase gen types typescript` generates:
-// nullable columns have a database-level NULL default, so they don't need
-// to be supplied in INSERT payloads. Non-nullable columns remain required.
+// ── Insert types ──────────────────────────────────────────────────────────────
+
 type Insertable<T> = {
   [K in keyof T as null extends T[K] ? K : never]?: T[K];
 } & {
@@ -465,15 +364,13 @@ export type ProjectMemberInsert = Omit<ProjectMemberRow, "id" | "created_at">;
 export type ClientInsert = Insertable<Omit<ClientRow, "id" | "created_at" | "updated_at">>;
 export type ProjectInsert = Insertable<Omit<ProjectRow, "id" | "created_at" | "updated_at">>;
 export type ContactInsert = Insertable<Omit<ContactRow, "id" | "created_at" | "updated_at">>;
-export type DrawingInsert = Insertable<Omit<DrawingRow, "id" | "created_at" | "updated_at">>;
-export type DrawingHotspotInsert = Insertable<Omit<DrawingHotspotRow, "id" | "created_at">>;
 export type SpecTemplateInsert = Insertable<Omit<SpecTemplateRow, "id" | "created_at" | "updated_at">>;
 export type SpecTemplateFieldInsert = Insertable<Omit<SpecTemplateFieldRow, "id" | "created_at">>;
 export type SpecInsert = Insertable<Omit<SpecRow, "id" | "created_at" | "updated_at">>;
 export type SpecFieldValueInsert = Insertable<Omit<SpecFieldValueRow, "id" | "created_at">>;
 export type SpecCategoryInsert = Insertable<Omit<SpecCategoryRow, "id" | "created_at">>;
 export type SpecSupplierInsert = SpecSupplierRow;
-export type ProjectSpecInsert = Insertable<Omit<ProjectSpecRow, "id" | "created_at" | "updated_at">>;
+export type ProjectOptionInsert = Insertable<Omit<ProjectOptionRow, "id" | "created_at" | "updated_at">>;
 export type StudioMaterialInsert = Insertable<Omit<StudioMaterialRow, "id" | "created_at" | "updated_at">>;
 export type ContactCategoryInsert = Insertable<Omit<ContactCategoryRow, "id" | "created_at">>;
 export type ContactCompanyInsert = Insertable<Omit<ContactCompanyRow, "id" | "created_at" | "updated_at">>;
@@ -481,22 +378,14 @@ export type ContactPersonInsert = Insertable<Omit<ContactPersonRow, "id" | "crea
 export type GlobalSpecInsert = Insertable<Omit<GlobalSpecRow, "id" | "scraped_at" | "updated_at">>;
 export type GlobalSpecFieldInsert = Insertable<Omit<GlobalSpecFieldRow, "id">>;
 export type GlobalSpecTagInsert = GlobalSpecTagRow;
-export type StudioFinishInsert = Insertable<Omit<StudioFinishRow, "id" | "created_at" | "updated_at">>;
-// DrawingFinishRow has a composite PK — both columns are required on insert
-export type DrawingFinishInsert = Omit<DrawingFinishRow, "created_at">;
-export type StudioSpecPreferenceInsert = Insertable<Omit<StudioSpecPreferenceRow, "id" | "created_at" | "updated_at">>;
 export type ProjectCanvasInsert = Insertable<Omit<ProjectCanvasRow, "id" | "created_at" | "updated_at">>;
+export type ProjectImageInsert = Insertable<Omit<ProjectImageRow, "id" | "created_at">>;
 
-// ── Database type — used to type the Supabase client ─────────────────────
-// This follows the shape that `supabase gen types typescript` would produce.
-// It's simplified here — run the CLI command for a fully typed version once
-// you have a live Supabase project.
+// ── Database type — used to type the Supabase client ─────────────────────────
 
-// Shared empty Relationships array (required by Supabase JS SDK v2.102+ GenericTable contract)
 type EmptyRelationships = [];
 
 export type Database = {
-  // Required by Supabase JS SDK v2.102+ for correct Insert/Update type inference
   __InternalSupabase: {
     PostgrestVersion: "12";
   };
@@ -538,18 +427,6 @@ export type Database = {
         Update: Partial<ProjectInsert>;
         Relationships: EmptyRelationships;
       };
-      drawings: {
-        Row: DrawingRow;
-        Insert: DrawingInsert;
-        Update: Partial<DrawingInsert>;
-        Relationships: EmptyRelationships;
-      };
-      drawing_hotspots: {
-        Row: DrawingHotspotRow;
-        Insert: DrawingHotspotInsert;
-        Update: Partial<DrawingHotspotInsert>;
-        Relationships: EmptyRelationships;
-      };
       spec_templates: {
         Row: SpecTemplateRow;
         Insert: SpecTemplateInsert;
@@ -574,10 +451,10 @@ export type Database = {
         Update: Partial<SpecFieldValueInsert>;
         Relationships: EmptyRelationships;
       };
-      project_specs: {
-        Row: ProjectSpecRow;
-        Insert: ProjectSpecInsert;
-        Update: Partial<ProjectSpecInsert>;
+      project_options: {
+        Row: ProjectOptionRow;
+        Insert: ProjectOptionInsert;
+        Update: Partial<ProjectOptionInsert>;
         Relationships: EmptyRelationships;
       };
       contact_categories: {
@@ -658,24 +535,6 @@ export type Database = {
         Update: Partial<GlobalSpecTagInsert>;
         Relationships: EmptyRelationships;
       };
-      studio_finishes: {
-        Row: StudioFinishRow;
-        Insert: StudioFinishInsert;
-        Update: Partial<StudioFinishInsert>;
-        Relationships: EmptyRelationships;
-      };
-      drawing_finishes: {
-        Row: DrawingFinishRow;
-        Insert: DrawingFinishInsert;
-        Update: Partial<Omit<DrawingFinishRow, "drawing_id" | "studio_finish_id">>;
-        Relationships: EmptyRelationships;
-      };
-      studio_spec_preferences: {
-        Row: StudioSpecPreferenceRow;
-        Insert: StudioSpecPreferenceInsert;
-        Update: Partial<StudioSpecPreferenceInsert>;
-        Relationships: EmptyRelationships;
-      };
       studio_materials: {
         Row: StudioMaterialRow;
         Insert: StudioMaterialInsert;
@@ -688,10 +547,10 @@ export type Database = {
         Update: Partial<Omit<ProjectCanvasRow, "id" | "created_at">>;
         Relationships: EmptyRelationships;
       };
-      project_schedule_preferences: {
-        Row: ProjectSchedulePreferenceRow;
-        Insert: Omit<ProjectSchedulePreferenceRow, "id" | "created_at">;
-        Update: Partial<Omit<ProjectSchedulePreferenceRow, "id" | "created_at" | "project_id" | "studio_id">>;
+      project_images: {
+        Row: ProjectImageRow;
+        Insert: ProjectImageInsert;
+        Update: Partial<Omit<ProjectImageRow, "id" | "created_at">>;
         Relationships: EmptyRelationships;
       };
     };
@@ -711,15 +570,11 @@ export type Database = {
       studio_member_role: StudioMemberRole;
       subscription_status: SubscriptionStatus;
       project_status: ProjectStatus;
-      hotspot_type: HotspotType;
       field_type: FieldType;
       spec_status: SpecStatus;
-      drawing_type: DrawingType;
-      spec_item_type: SpecItemType;
     };
   };
 };
 
-// Convenience shorthand: Tables<"profiles"> gives you ProfileRow, etc.
 export type Tables<T extends keyof Database["public"]["Tables"]> =
   Database["public"]["Tables"][T]["Row"];

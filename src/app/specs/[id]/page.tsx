@@ -71,7 +71,7 @@ export default async function SpecDetailPage({ params }: PageProps) {
 
   // Fetch projects that use this spec
   const { data: projectSpecData } = await supabase
-    .from("project_specs")
+    .from("project_options")
     .select("project_id")
     .eq("spec_id", id);
 

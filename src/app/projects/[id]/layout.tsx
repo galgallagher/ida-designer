@@ -59,14 +59,34 @@ export default async function ProjectLayout({ children, params }: LayoutProps) {
   const studioRole = currentMembership?.role ?? null;
   const isAdmin = profile?.platform_role === "super_admin" || studioRole === "owner" || studioRole === "admin";
 
-  // Round 3: client name — only needs project.client_id which we now have
-  const { data: clientData } = await supabase
-    .from("clients")
-    .select("name")
-    .eq("id", project.client_id)
-    .single();
+  // Round 3: client name + project options sub-nav data
+  const [{ data: clientData }, { data: optionsData }, { data: imagesData }] = await Promise.all([
+    supabase.from("clients").select("name").eq("id", project.client_id).single(),
+    supabase.from("project_options")
+      .select("specs(spec_categories(name))")
+      .eq("project_id", id)
+      .eq("studio_id", currentStudioId ?? "")
+      .not("spec_id", "is", null),
+    supabase.from("project_images")
+      .select("type")
+      .eq("project_id", id)
+      .eq("studio_id", currentStudioId ?? ""),
+  ]);
 
   const clientName = clientData?.name ?? "Unknown client";
+
+  // Build category list for ProjectNav sub-nav
+  const catCounts = new Map<string, number>();
+  (optionsData ?? []).forEach((o) => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const name = (o as any).specs?.spec_categories?.name as string | undefined;
+    if (name) catCounts.set(name, (catCounts.get(name) ?? 0) + 1);
+  });
+  const optionCategories = Array.from(catCounts.entries())
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([label, count]) => ({ label, count }));
+  const inspirationCount = (imagesData ?? []).filter((i) => i.type === "inspiration").length;
+  const sketchCount      = (imagesData ?? []).filter((i) => i.type === "sketch").length;
 
   return (
     <div className="flex h-screen overflow-hidden" style={{ backgroundColor: "#EDEDED" }}>
@@ -80,6 +100,7 @@ export default async function ProjectLayout({ children, params }: LayoutProps) {
         projectCode={project.code}
         projectStatus={project.status}
         clientName={clientName}
+        optionsSubNav={{ categories: optionCategories, inspirationCount, sketchCount }}
       />
 
       {/* Page content */}

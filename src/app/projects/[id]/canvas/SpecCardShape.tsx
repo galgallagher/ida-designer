@@ -1,25 +1,10 @@
 "use client";
 
 /**
- * SpecCardShape — a custom tldraw shape for product images on the canvas.
- *
- * Why a custom shape instead of a native `image`?
- * - Native image shapes have built-in double-click behaviour (enter crop mode),
- *   which fights our "double-click opens the spec modal" handler.
- * - A custom shape lets us attach a clean DOM onClick that opens the spec
- *   detail modal without tldraw intercepting.
- *
- * Pattern (from tldraw's interactive-shape example):
- * - HTMLContainer with `pointerEvents: 'all'` so the DOM receives events.
- * - The image has `pointerEvents: 'none'` so the click lands on the parent.
- * - onClick fires only when the browser registers a click (no drag) — tldraw
- *   still receives pointerdown/move through the container, so drag/select works.
- * - stopPropagation in onClick prevents tldraw from also treating it as a
- *   canvas click (which would deselect).
- *
- * The shape dispatches a window CustomEvent('canvas:open-spec', { specId })
- * that ProjectCanvasClient listens for — this avoids needing to thread a
- * React callback through tldraw's shape registry.
+ * SpecCardShape — custom tldraw shape for spec/product cards on the canvas.
+ * Used for items scraped from URLs or added from the project library.
+ * Has an ⓘ button to toggle the info footer, and an arrow button to open
+ * the full spec detail modal.
  */
 
 import {
@@ -31,14 +16,6 @@ import {
 } from "tldraw";
 import type React from "react";
 
-// Props type — kept separate so we can augment tldraw's global shape map.
-// code / category / showInfo are optional fields that were added after the
-// initial shape shipped, so they're marked optional to keep older snapshots
-// loading cleanly (tldraw validates every prop on snapshot load).
-//
-// showInfo controls whether the text footer (category / name / code) is
-// rendered. Default is false — the card is image-only until the user clicks
-// the info toggle button, which expands the card by TEXT_AREA_H pixels.
 type SpecCardShapeProps = {
   w: number;
   h: number;
@@ -50,12 +27,9 @@ type SpecCardShapeProps = {
   showInfo?: boolean;
 };
 
-// Height of the text footer when info is visible. Used for both layout
-// (in component) and for resizing the card when toggling (in the button).
+// Height of the text footer when info is visible.
 const TEXT_AREA_H = 68;
 
-// Shared style for the small card-corner buttons. `pressed=true` paints the
-// button in the yellow CTA colour so the info toggle looks active.
 function cardButtonStyle(pressed: boolean): React.CSSProperties {
   return {
     width: 28,
@@ -73,24 +47,13 @@ function cardButtonStyle(pressed: boolean): React.CSSProperties {
   };
 }
 
-// ── Card body renderer ───────────────────────────────────────────────────────
-// Used by both component() (interactive) and toSvg() (PDF/image export).
-// Returns just the image + optional text footer — NO buttons, NO click handlers.
-// The component() wrapper adds the button overlay + HTMLContainer; toSvg()
-// wraps this in a <foreignObject>. Factoring it out keeps the visual
-// appearance identical between interactive and export rendering.
-function SpecCardBody({
-  shape,
-}: {
-  shape: SpecCardShape;
-}): React.ReactElement {
+function SpecCardBody({ shape }: { shape: SpecCardShape }): React.ReactElement {
   const { h, imageUrl, specName, code, category } = shape.props;
   const infoVisible = shape.props.showInfo === true;
   const imageAreaHeight = infoVisible ? Math.max(h - TEXT_AREA_H, 40) : h;
 
   return (
     <>
-      {/* Image area */}
       <div
         style={{
           position: "relative",
@@ -107,10 +70,6 @@ function SpecCardBody({
             src={imageUrl}
             alt={specName}
             draggable={false}
-            // No crossOrigin attribute — this is a plain DOM <img>, not drawn
-            // to a canvas, so CORS rules don't apply here. PDF export uses the
-            // async toSvg below, which pre-fetches the image and embeds it as
-            // a data URI, so it has its own independent fetch path.
             style={{
               width: "100%",
               height: "100%",
@@ -138,7 +97,6 @@ function SpecCardBody({
         )}
       </div>
 
-      {/* Text footer (only when info is toggled on) */}
       {infoVisible ? (
         <div
           style={{
@@ -153,32 +111,11 @@ function SpecCardBody({
           }}
         >
           {category ? (
-            <div
-              style={{
-                fontSize: 9,
-                fontWeight: 600,
-                letterSpacing: 0.6,
-                color: "#9A9590",
-                textTransform: "uppercase",
-                whiteSpace: "nowrap",
-                overflow: "hidden",
-                textOverflow: "ellipsis",
-              }}
-            >
+            <div style={{ fontSize: 9, fontWeight: 600, letterSpacing: 0.6, color: "#9A9590", textTransform: "uppercase", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
               {category}
             </div>
           ) : null}
-          <div
-            style={{
-              fontSize: 14,
-              fontWeight: 600,
-              color: "#1A1A1A",
-              lineHeight: 1.25,
-              whiteSpace: "nowrap",
-              overflow: "hidden",
-              textOverflow: "ellipsis",
-            }}
-          >
+          <div style={{ fontSize: 14, fontWeight: 600, color: "#1A1A1A", lineHeight: 1.25, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
             {specName || "Product"}
           </div>
           {code ? (
@@ -190,10 +127,6 @@ function SpecCardBody({
   );
 }
 
-// Register our custom shape type with tldraw's TypeScript registry so that
-// `editor.createShape({ type: "spec-card", ... })` and `BaseBoxShapeUtil<T>`
-// both type-check correctly. Without this, tldraw only knows about its
-// built-in shape types and treats "spec-card" as unknown.
 declare module "tldraw" {
   interface TLGlobalShapePropsMap {
     "spec-card": SpecCardShapeProps;
@@ -210,7 +143,6 @@ export class SpecCardShapeUtil extends BaseBoxShapeUtil<SpecCardShape> {
     imageUrl: T.string,
     specId: T.string,
     specName: T.string,
-    // Optional: older snapshots predate these props.
     code: T.string.optional(),
     category: T.string.optional(),
     showInfo: T.boolean.optional(),
@@ -219,7 +151,7 @@ export class SpecCardShapeUtil extends BaseBoxShapeUtil<SpecCardShape> {
   getDefaultProps(): SpecCardShape["props"] {
     return {
       w: 240,
-      h: 240, // image-only by default (square)
+      h: 240,
       imageUrl: "",
       specId: "",
       specName: "",
@@ -229,7 +161,6 @@ export class SpecCardShapeUtil extends BaseBoxShapeUtil<SpecCardShape> {
     };
   }
 
-  // Allow resize (handled by BaseBoxShapeUtil), disable rotation/editing
   override canResize = () => true;
   override canEdit = () => false;
   override hideRotateHandle = () => true;
@@ -241,14 +172,10 @@ export class SpecCardShapeUtil extends BaseBoxShapeUtil<SpecCardShape> {
     function openModal(e: React.MouseEvent | React.PointerEvent) {
       e.stopPropagation();
       if (specId) {
-        window.dispatchEvent(
-          new CustomEvent("canvas:open-spec", { detail: { specId } }),
-        );
+        window.dispatchEvent(new CustomEvent("canvas:open-spec", { detail: { specId } }));
       }
     }
 
-    // Toggle the info footer. Grow/shrink the shape by TEXT_AREA_H so the
-    // image area stays visually identical on either side of the toggle.
     const toggleInfo = (e: React.MouseEvent) => {
       e.stopPropagation();
       const nextVisible = !infoVisible;
@@ -277,26 +204,10 @@ export class SpecCardShapeUtil extends BaseBoxShapeUtil<SpecCardShape> {
           position: "relative",
         }}
       >
-        {/* Shared body — image + optional text footer. Same renderer as the
-          * SVG export path, so the card looks identical in-app and in the PDF. */}
         <SpecCardBody shape={shape} />
 
-        {/* ── Button cluster (top-right, interactive only) ──────────────────
-          * Absolutely positioned over the image. stopPropagation on pointerdown
-          * prevents tldraw from starting a drag when the user grabs a button;
-          * the rest of the card body remains fully draggable because the
-          * propagation is only stopped inside these small footprints.
-          * These buttons are NOT rendered in SVG exports (see toSvg below).
-          */}
-        <div
-          style={{
-            position: "absolute",
-            top: 8,
-            right: 8,
-            display: "flex",
-            gap: 6,
-          }}
-        >
+        <div style={{ position: "absolute", top: 8, right: 8, display: "flex", gap: 6 }}>
+          {/* ⓘ — toggle info footer */}
           <button
             type="button"
             title={infoVisible ? "Hide details" : "Show details"}
@@ -307,24 +218,14 @@ export class SpecCardShapeUtil extends BaseBoxShapeUtil<SpecCardShape> {
             onClick={toggleInfo}
             style={cardButtonStyle(infoVisible)}
           >
-            {/* Lucide "info" — circle with lowercase i */}
-            <svg
-              width="14"
-              height="14"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              aria-hidden="true"
-            >
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
               <circle cx="12" cy="12" r="10" />
               <line x1="12" y1="16" x2="12" y2="12" />
               <line x1="12" y1="8" x2="12.01" y2="8" />
             </svg>
           </button>
 
+          {/* ↗ — open spec detail modal */}
           <button
             type="button"
             title="Open product details"
@@ -334,18 +235,7 @@ export class SpecCardShapeUtil extends BaseBoxShapeUtil<SpecCardShape> {
             onClick={openModal}
             style={cardButtonStyle(false)}
           >
-            {/* Lucide "arrow-up-right" */}
-            <svg
-              width="14"
-              height="14"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              aria-hidden="true"
-            >
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
               <path d="M7 17L17 7" />
               <path d="M8 7h9v9" />
             </svg>
@@ -355,19 +245,6 @@ export class SpecCardShapeUtil extends BaseBoxShapeUtil<SpecCardShape> {
     );
   }
 
-  // ── SVG export (PDF, PNG, etc.) ─────────────────────────────────────────
-  // When tldraw exports a shape, it calls toSvg if present; otherwise it
-  // wraps component() in a foreignObject, which would include our buttons.
-  // Overriding toSvg lets us render the same card body inside a foreignObject
-  // but WITHOUT the interactive button overlay — so PDFs come out clean.
-  //
-  // CRITICAL: an SVG loaded as the src of an Image element (which is how
-  // tldraw rasterises shapes for PNG/PDF export) refuses to fetch any
-  // external resources referenced inside a <foreignObject>, regardless of
-  // CORS. The only way to get the product image into the export is to
-  // pre-fetch it, base64-encode it, and embed it as a data URI in the SVG.
-  // We do that here. Falls back to the URL on failure (which will drop from
-  // the export, same as before — never worse).
   override async toSvg(shape: SpecCardShape) {
     const { w, h, imageUrl } = shape.props;
 
@@ -385,12 +262,10 @@ export class SpecCardShapeUtil extends BaseBoxShapeUtil<SpecCardShape> {
           });
         }
       } catch {
-        /* fall through — embeddedSrc stays null; image will drop from export */
+        /* fall through */
       }
     }
 
-    // Substitute the data URI into a cloned shape so SpecCardBody renders
-    // the embedded version without any other behaviour changing.
     const shapeForExport: SpecCardShape = embeddedSrc
       ? { ...shape, props: { ...shape.props, imageUrl: embeddedSrc } }
       : shape;
@@ -398,8 +273,6 @@ export class SpecCardShapeUtil extends BaseBoxShapeUtil<SpecCardShape> {
     return (
       <foreignObject x={0} y={0} width={w} height={h}>
         <div
-          // xmlns is required for XHTML inside SVG foreignObject. React's
-          // HTMLAttributes type doesn't list it, so we cast on the attribute.
           {...{ xmlns: "http://www.w3.org/1999/xhtml" }}
           style={{
             width: w,
@@ -420,8 +293,6 @@ export class SpecCardShapeUtil extends BaseBoxShapeUtil<SpecCardShape> {
   }
 
   indicator(shape: SpecCardShape) {
-    return (
-      <rect width={shape.props.w} height={shape.props.h} rx={14} ry={14} />
-    );
+    return <rect width={shape.props.w} height={shape.props.h} rx={14} ry={14} />;
   }
 }

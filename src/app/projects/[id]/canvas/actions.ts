@@ -133,7 +133,16 @@ export async function deleteCanvas(canvasId: string, projectId: string) {
     return { error: "Cannot delete the last canvas." };
   }
 
-  // TODO: Clean up storage images for this canvas
+  // Clean up all storage images uploaded to this canvas
+  const { data: images } = await supabase
+    .from("project_images")
+    .select("storage_path")
+    .eq("canvas_id", canvasId);
+
+  if (images && images.length > 0) {
+    const paths = images.map((img) => img.storage_path);
+    await supabase.storage.from("canvas-images").remove(paths);
+  }
 
   const { error } = await supabase
     .from("project_canvases")
@@ -202,17 +211,30 @@ export async function getLibrarySpecs(): Promise<{
 
 // ── Upload an image to canvas storage ─────────────────────────────────────────
 
-export async function uploadCanvasImage(canvasId: string, formData: FormData) {
+export async function uploadCanvasImage(
+  canvasId: string,
+  projectId: string,
+  formData: FormData,
+) {
   const supabase = await createClient();
   const studioId = await getCurrentStudioId();
-  if (!studioId) return { error: "No studio context.", url: null };
+  if (!studioId) return { error: "No studio context.", url: null, imageId: null };
 
   const file = formData.get("file") as File | null;
-  if (!file) return { error: "No file provided.", url: null };
-  if (!file.type.startsWith("image/")) return { error: "File must be an image.", url: null };
-  if (file.size > 10 * 1024 * 1024) return { error: "Image must be under 10 MB.", url: null };
+  if (!file) return { error: "No file provided.", url: null, imageId: null };
+  if (!file.type.startsWith("image/")) return { error: "File must be an image.", url: null, imageId: null };
+  if (file.size > 50 * 1024 * 1024) return { error: "Image must be under 50 MB.", url: null, imageId: null };
 
-  const ext = file.name.split(".").pop() || "jpg";
+  const MIME_TO_EXT: Record<string, string> = {
+    "image/jpeg": "jpg",
+    "image/png": "png",
+    "image/gif": "gif",
+    "image/webp": "webp",
+    "image/svg+xml": "svg",
+    "image/avif": "avif",
+    "image/heic": "heic",
+  };
+  const ext = MIME_TO_EXT[file.type] ?? file.name.split(".").pop() ?? "jpg";
   const assetId = crypto.randomUUID();
   const path = `${studioId}/${canvasId}/${assetId}.${ext}`;
 
@@ -222,12 +244,119 @@ export async function uploadCanvasImage(canvasId: string, formData: FormData) {
 
   if (uploadError) {
     console.error("[uploadCanvasImage]", uploadError);
-    return { error: "Image upload failed.", url: null };
+    return { error: "Image upload failed.", url: null, imageId: null };
   }
 
   const { data: urlData } = supabase.storage
     .from("canvas-images")
     .getPublicUrl(path);
 
-  return { error: null, url: urlData.publicUrl };
+  const publicUrl = urlData.publicUrl;
+
+  // Record in project_images (default type: inspiration — user can retag)
+  const { data: imgRecord } = await supabase
+    .from("project_images")
+    .insert({
+      project_id: projectId,
+      studio_id: studioId,
+      canvas_id: canvasId,
+      storage_path: path,
+      url: publicUrl,
+      type: "inspiration",
+    })
+    .select("id")
+    .single();
+
+  return { error: null, url: publicUrl, imageId: imgRecord?.id ?? null };
+}
+
+// ── Tag a project image (inspiration / sketch) ────────────────────────────────
+
+export async function tagProjectImage(
+  imageId: string,
+  type: "inspiration" | "sketch",
+): Promise<{ error: string | null }> {
+  const supabase = await createClient();
+  const studioId = await getCurrentStudioId();
+  if (!studioId) return { error: "No studio context." };
+
+  const { error } = await supabase
+    .from("project_images")
+    .update({ type })
+    .eq("id", imageId)
+    .eq("studio_id", studioId);
+
+  if (error) return { error: error.message };
+  return { error: null };
+}
+
+// ── Delete a project image ────────────────────────────────────────────────────
+// Removes from project_images, Supabase Storage, and patches the canvas
+// snapshot to remove the matching canvas-image shape.
+
+export async function deleteProjectImage(
+  imageId: string,
+): Promise<{ error: string | null }> {
+  const supabase = await createClient();
+  const studioId = await getCurrentStudioId();
+  if (!studioId) return { error: "No studio context." };
+
+  // Fetch the record to get storage_path and canvas_id before deleting.
+  const { data: image } = await supabase
+    .from("project_images")
+    .select("storage_path, canvas_id")
+    .eq("id", imageId)
+    .eq("studio_id", studioId)
+    .single();
+
+  if (!image) return { error: "Image not found." };
+
+  // Delete the DB record.
+  const { error: dbError } = await supabase
+    .from("project_images")
+    .delete()
+    .eq("id", imageId)
+    .eq("studio_id", studioId);
+
+  if (dbError) return { error: dbError.message };
+
+  // Delete from Storage (best-effort — don't fail if file is already gone).
+  if (image.storage_path) {
+    await supabase.storage.from("canvas-images").remove([image.storage_path]);
+  }
+
+  // Remove the canvas-image shape from the canvas snapshot.
+  if (image.canvas_id) {
+    const { data: canvas } = await supabase
+      .from("project_canvases")
+      .select("content")
+      .eq("id", image.canvas_id)
+      .eq("studio_id", studioId)
+      .single();
+
+    if (canvas?.content) {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const content = canvas.content as any;
+      const store = content?.document?.store;
+      if (store && typeof store === "object") {
+        // Remove all canvas-image shapes whose imageId matches.
+        const updated = Object.fromEntries(
+          Object.entries(store).filter(([, record]) => {
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            const r = record as any;
+            return !(r.typeName === "shape" && r.type === "canvas-image" && r.props?.imageId === imageId);
+          }),
+        );
+        content.document.store = updated;
+
+        await supabase
+          .from("project_canvases")
+          .update({ content, updated_at: new Date().toISOString() })
+          .eq("id", image.canvas_id)
+          .eq("studio_id", studioId);
+      }
+    }
+  }
+
+  return { error: null };
 }

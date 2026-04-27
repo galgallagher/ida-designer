@@ -77,6 +77,9 @@ export async function POST(req: Request) {
       ? fullSpec?.category[0]?.name ?? null
       : (fullSpec?.category as { name?: string } | null)?.name ?? null;
 
+    // Add to project options (ignore if already there)
+    await addToProjectOptions(supabase, scrapeResult.spec_id!, project_id, studioId);
+
     return NextResponse.json({
       spec_id: scrapeResult.spec_id,
       name: scrapeResult.spec_name,
@@ -119,6 +122,9 @@ export async function POST(req: Request) {
 
   const saved = await saveRes.json() as { id: string; name: string };
 
+  // Add to project options (ignore if already there)
+  await addToProjectOptions(supabase, saved.id, project_id, studioId);
+
   // Resolve category name for the canvas card display.
   let categoryName: string | null = null;
   if (scrapeResult.category_id) {
@@ -143,6 +149,19 @@ export async function POST(req: Request) {
     source_url: url,
     already_existed: false,
   });
+}
+
+// ── Add to project options ────────────────────────────────────────────────────
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+async function addToProjectOptions(supabase: any, specId: string, projectId: string, studioId: string) {
+  await supabase.from("project_options").insert({
+    project_id: projectId,
+    studio_id: studioId,
+    spec_id: specId,
+    status: "draft",
+  });
+  // Ignore errors — unique constraint means it's already in the project, which is fine.
 }
 
 // ── Types ─────────────────────────────────────────────────────────────────────

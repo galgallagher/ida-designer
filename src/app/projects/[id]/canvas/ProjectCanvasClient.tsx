@@ -28,6 +28,7 @@ import type { Editor } from "tldraw";
 import { createShapeId } from "tldraw";
 import SpecDetailModal from "@/app/specs/SpecDetailModal";
 import LibraryPickerModal from "./LibraryPickerModal";
+import { addSpecToProject } from "../options/actions";
 
 // Lazy-load tldraw to keep bundle size down on other pages
 const TldrawCanvas = dynamic(() => import("./TldrawCanvas"), {
@@ -123,6 +124,9 @@ export default function ProjectCanvasClient({ projectId, studioId, canvases: ini
   const [exportStatus, setExportStatus] = useState<string | null>(null);
   const [exportIsError, setExportIsError] = useState(false);
 
+  // Image upload error
+  const [uploadError, setUploadError] = useState<string | null>(null);
+
   // URL scraping state
   const [showUrlInput, setShowUrlInput] = useState(false);
   const [urlValue, setUrlValue] = useState("");
@@ -205,22 +209,30 @@ export default function ProjectCanvasClient({ projectId, studioId, canvases: ini
     [activeCanvasId],
   );
 
-  // ── Image upload handler (called from TldrawCanvas on file drop) ────────────
+  // ── Image upload handler (called from TldrawCanvas on file drop/paste) ──────
 
   const handleImageUpload = useCallback(
-    async (file: File): Promise<string | null> => {
+    async (file: File): Promise<{ url: string; imageId: string | null } | null> => {
       if (!activeCanvasId) return null;
       const fd = new FormData();
       fd.append("file", file);
-      const { url, error } = await uploadCanvasImage(activeCanvasId, fd);
-      if (error) {
+      const { url, imageId, error } = await uploadCanvasImage(activeCanvasId, projectId, fd);
+      if (error || !url) {
         console.error("[handleImageUpload]", error);
         return null;
       }
-      return url;
+      return { url, imageId };
     },
-    [activeCanvasId],
+    [activeCanvasId, projectId],
   );
+
+
+  // ── Image upload error handler ──────────────────────────────────────────────
+
+  const handleUploadError = useCallback((message: string) => {
+    setUploadError(message);
+    setTimeout(() => setUploadError(null), 5000);
+  }, []);
 
   // ── Editor ref callback ─────────────────────────────────────────────────────
   // Click-to-open is handled inside the SpecCardShape component itself — it
@@ -299,7 +311,7 @@ export default function ProjectCanvasClient({ projectId, studioId, canvases: ini
     });
 
     // Card dimensions:
-    // - Width: fixed 240px (matches Project Library card feel).
+    // - Width: fixed 240px (matches Project Options card feel).
     // - Height: matches image aspect (image-only by default, no text footer).
     //   User can toggle the info footer on via the "i" button on the card,
     //   which grows the card by 68px.
@@ -342,8 +354,6 @@ export default function ProjectCanvasClient({ projectId, studioId, canvases: ini
   }
 
   // ── Place a library spec on canvas (from the picker modal) ─────────────────
-  // Visual only — places a spec-card shape on the canvas. Does NOT add to
-  // project specs; that only happens when the item is assigned to a schedule.
 
   async function handleLibrarySpecSelect(spec: LibrarySpecLite) {
     const editor = editorRef.current;
@@ -396,6 +406,8 @@ export default function ProjectCanvasClient({ projectId, studioId, canvases: ini
       },
     });
 
+    // Add to project options (fire-and-forget — ignore if already there)
+    addSpecToProject(projectId, { spec_id: spec.id });
   }
 
   // Reset placement offset when the picker closes so the next session starts
@@ -907,6 +919,23 @@ export default function ProjectCanvasClient({ projectId, studioId, canvases: ini
         </div>
       )}
 
+      {/* ── Image upload error bar ─────────────────────────────────────────── */}
+      {uploadError && (
+        <div
+          className="flex items-center gap-2 px-5 flex-shrink-0"
+          style={{
+            height: 36,
+            backgroundColor: "#FEF2F2",
+            borderBottom: "1px solid #E4E1DC",
+            fontFamily: "var(--font-inter), sans-serif",
+            fontSize: 12,
+            color: "#991B1B",
+          }}
+        >
+          {uploadError}
+        </div>
+      )}
+
       {/* ── Canvas area ────────────────────────────────────────────────────── */}
       <div className="flex-1 relative">
         {isLoading ? (
@@ -920,6 +949,7 @@ export default function ProjectCanvasClient({ projectId, studioId, canvases: ini
             onSave={handleSave}
             onImageUpload={handleImageUpload}
             onEditorMount={handleEditorMount}
+            onUploadError={handleUploadError}
           />
         )}
       </div>

@@ -1,15 +1,6 @@
-/**
- * Project Settings — /projects/[id]/settings
- *
- * Per-project configuration. Currently: schedule customisation.
- * Inherits from studio_spec_preferences by default; override here per project.
- */
-
 import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { getCurrentStudioId } from "@/lib/studio-context";
-import { SYSTEM_SCHEDULES, SYSTEM_LABEL_MAP } from "@/lib/schedule-types";
-import ProjectSettingsClient, { type SettingsScheduleRow } from "./ProjectSettingsClient";
 
 interface PageProps {
   params: Promise<{ id: string }>;
@@ -17,90 +8,54 @@ interface PageProps {
 
 export default async function ProjectSettingsPage({ params }: PageProps) {
   const { id: projectId } = await params;
-  const supabase  = await createClient();
-  const studioId  = await getCurrentStudioId();
+  const supabase = await createClient();
+  const studioId = await getCurrentStudioId();
   if (!studioId) notFound();
 
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) notFound();
 
-  const { data: projectData } = await supabase
+  const { data: project } = await supabase
     .from("projects")
-    .select("id, name")
+    .select("id, name, code, status, site_address, description")
     .eq("id", projectId)
     .eq("studio_id", studioId)
     .single();
 
-  if (!projectData) notFound();
-
-  // ── Fetch project-level prefs (may be empty if not yet customised) ─────────
-
-  const { data: projectPrefs } = await supabase
-    .from("project_schedule_preferences")
-    .select("*")
-    .eq("project_id", projectId)
-    .order("sort_order");
-
-  const hasProjectPrefs = projectPrefs && projectPrefs.length > 0;
-
-  // ── Build the displayed list ──────────────────────────────────────────────
-  // If project has prefs: show those.
-  // Otherwise: show studio prefs (or system defaults) as a starting point.
-
-  let rows: SettingsScheduleRow[];
-
-  if (hasProjectPrefs) {
-    rows = projectPrefs.map((p) => ({
-      item_type:    p.item_type,
-      default_label: SYSTEM_LABEL_MAP.get(p.item_type) ?? null,
-      display_name: p.display_name,
-      is_visible:   p.is_visible,
-      is_custom:    p.is_custom,
-      sort_order:   p.sort_order,
-      is_project_override: true,
-    }));
-  } else {
-    // Fall back to studio prefs
-    const { data: studioPrefs } = await supabase
-      .from("studio_spec_preferences")
-      .select("*")
-      .eq("studio_id", studioId)
-      .order("sort_order");
-
-    const prefs = studioPrefs ?? [];
-    const savedTypes = new Set(prefs.map((p) => p.item_type));
-
-    const studioRows: SettingsScheduleRow[] = prefs.map((p) => ({
-      item_type:    p.item_type,
-      default_label: SYSTEM_LABEL_MAP.get(p.item_type) ?? null,
-      display_name: p.display_name,
-      is_visible:   p.is_visible,
-      is_custom:    p.is_custom,
-      sort_order:   p.sort_order,
-      is_project_override: false,
-    }));
-
-    const systemRows: SettingsScheduleRow[] = SYSTEM_SCHEDULES
-      .filter((s) => !savedTypes.has(s.type))
-      .map((s, i) => ({
-        item_type:    s.type,
-        default_label: s.label,
-        display_name: null,
-        is_visible:   true,
-        is_custom:    false,
-        sort_order:   prefs.length + i,
-        is_project_override: false,
-      }));
-
-    rows = [...studioRows, ...systemRows];
-  }
+  if (!project) notFound();
 
   return (
-    <ProjectSettingsClient
-      projectId={projectId}
-      projectName={projectData.name}
-      initialRows={rows}
-      hasProjectOverride={hasProjectPrefs ?? false}
-    />
+    <div style={{ maxWidth: 560 }}>
+      <h1 style={{ fontFamily: "var(--font-playfair), serif", fontSize: 26, fontWeight: 700, color: "#1A1A1A", marginBottom: 4 }}>
+        Settings
+      </h1>
+      <p style={{ fontFamily: "var(--font-inter), sans-serif", fontSize: 13, color: "#9A9590", marginBottom: 32 }}>
+        {project.name}
+      </p>
+
+      <div className="flex flex-col gap-4">
+        <Field label="Project name" value={project.name} />
+        {project.code && <Field label="Project code" value={project.code} />}
+        {project.site_address && <Field label="Site address" value={project.site_address} />}
+        {project.description && <Field label="Description" value={project.description} />}
+      </div>
+
+      <p style={{ fontFamily: "var(--font-inter), sans-serif", fontSize: 12, color: "#C0BEBB", marginTop: 32 }}>
+        Editing project details coming soon.
+      </p>
+    </div>
+  );
+}
+
+function Field({ label, value }: { label: string; value: string }) {
+  return (
+    <div style={{ backgroundColor: "#FFFFFF", borderRadius: 10, padding: "14px 16px", boxShadow: "0 1px 6px rgba(26,26,26,0.06)" }}>
+      <p style={{ fontFamily: "var(--font-inter), sans-serif", fontSize: 11, fontWeight: 600, color: "#9A9590", textTransform: "uppercase", letterSpacing: "0.07em", marginBottom: 4 }}>
+        {label}
+      </p>
+      <p style={{ fontFamily: "var(--font-inter), sans-serif", fontSize: 14, color: "#1A1A1A" }}>
+        {value}
+      </p>
+    </div>
   );
 }
