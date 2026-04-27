@@ -45,43 +45,11 @@ export async function POST(req: Request) {
 
   if (!spec) return Response.json({ error: "Spec not found in your library" }, { status: 404 });
 
-  // Resolve or create the default project option
-  let optionId: string | null = null;
-
-  const { data: existingOption } = await supabase
-    .from("project_options")
-    .select("id")
-    .eq("project_id", project_id)
-    .order("sort_order")
-    .limit(1)
-    .maybeSingle();
-
-  if (existingOption) {
-    optionId = existingOption.id;
-  } else {
-    const { data: newOption } = await supabase
-      .from("project_options")
-      .insert({
-        studio_id: studioId,
-        project_id,
-        name: "Option A",
-        label: "A",
-        sort_order: 0,
-        is_default: true,
-      })
-      .select("id")
-      .single();
-    optionId = newOption?.id ?? null;
-  }
-
-  if (!optionId) return Response.json({ error: "Could not resolve project option" }, { status: 500 });
-
   const { error: insertError } = await supabase.from("project_specs").insert({
     project_id,
-    project_option_id: optionId,
     studio_id: studioId,
     spec_id,
-    item_type: null,   // no schedule type assigned yet — user can categorise later
+    item_type: null,
     status: "draft",
     drawing_id: null,
     notes: null,

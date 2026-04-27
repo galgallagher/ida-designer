@@ -1,22 +1,23 @@
 "use client";
 
 /**
- * ProjectSpecsClient — /projects/[id]/specs (Project Library)
+ * Stage 2 — Project Library (/projects/[id]/specs)
  *
- * Flat grid of all products and materials being considered for this project.
- * Items are added from the studio library with a single click — no schedule
- * assignment at this stage. Schedule assignment happens on the Specs tab.
+ * Card grid of items under consideration for this project.
+ * item_type = null, no project code yet.
+ * "Add to schedule" promotes an item to Stage 3 (Specs page).
+ * See ADR 022.
  */
 
-import { useState, useTransition, useMemo } from "react";
-import { Plus, Package, Loader2, X } from "lucide-react";
+import { useState, useTransition, useMemo, useRef } from "react";
+import { Plus, Package, X, ChevronDown } from "lucide-react";
 import {
   Dialog,
   DialogContent,
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { addSpecToProject, removeSpecFromProject } from "./actions";
+import { addSpecToProject, removeSpecFromProject, assignSpecToSchedule } from "./actions";
 import SpecDetailModal from "@/app/specs/SpecDetailModal";
 import type { ProjectSpecRow } from "@/types/database";
 
@@ -33,11 +34,15 @@ type SpecDetail = {
   cost_unit: string | null;
 };
 
+type Schedule = { item_type: string; label: string };
+
 interface Props {
   projectId: string;
   projectName: string;
   projectSpecs: ProjectSpecRow[];
   librarySpecs: SpecDetail[];
+  allProjectSpecIds: string[];
+  schedules: Schedule[];
 }
 
 // ── Main component ─────────────────────────────────────────────────────────────
@@ -47,6 +52,8 @@ export default function ProjectSpecsClient({
   projectName,
   projectSpecs,
   librarySpecs,
+  allProjectSpecIds,
+  schedules,
 }: Props) {
   const [openSpecId, setOpenSpecId]   = useState<string | null>(null);
   const [dialogOpen, setDialogOpen]   = useState(false);
@@ -54,68 +61,55 @@ export default function ProjectSpecsClient({
   const [error, setError]             = useState<string | null>(null);
   const [isPending, startTransition]  = useTransition();
 
-  // ── Derived data ──────────────────────────────────────────────────────────────
-
-  // Build a map for fast spec detail lookups
   const specDetailMap = useMemo(() => {
-    const map = new Map<string, SpecDetail>();
-    librarySpecs.forEach((s) => map.set(s.id, s));
-    return map;
+    const m = new Map<string, SpecDetail>();
+    librarySpecs.forEach((s) => m.set(s.id, s));
+    return m;
   }, [librarySpecs]);
 
-  // Spec IDs already in the project (exclude from picker)
-  const addedSpecIds = useMemo(
-    () => new Set(projectSpecs.map((ps) => ps.spec_id)),
-    [projectSpecs]
-  );
+  const excludedIds = useMemo(() => new Set(allProjectSpecIds), [allProjectSpecIds]);
 
-  // Filtered library for the picker
   const filteredLibrary = useMemo(() => {
     const q = search.toLowerCase().trim();
     return librarySpecs.filter(
-      (s) => !addedSpecIds.has(s.id) && (q === "" || s.name.toLowerCase().includes(q))
+      (s) => !excludedIds.has(s.id) && (q === "" || s.name.toLowerCase().includes(q))
     );
-  }, [librarySpecs, search, addedSpecIds]);
+  }, [librarySpecs, search, excludedIds]);
 
-  // ── Handlers ──────────────────────────────────────────────────────────────────
-
-  function openDialog() {
-    setSearch("");
-    setError(null);
-    setDialogOpen(true);
-  }
-
-  function closeDialog() {
-    setDialogOpen(false);
-    setSearch("");
-    setError(null);
-  }
+  const scheduleLabelMap = useMemo(
+    () => new Map(schedules.map((s) => [s.item_type, s.label])),
+    [schedules]
+  );
 
   function pickSpec(spec: SpecDetail) {
     setError(null);
     startTransition(async () => {
       const result = await addSpecToProject(projectId, { spec_id: spec.id });
-      if (result.error) {
-        setError(result.error);
-      } else {
-        closeDialog();
-      }
+      if (result.error) setError(result.error);
+      else closeDialog();
     });
   }
 
   function handleRemove(projectSpecId: string) {
-    if (!window.confirm("Remove this spec from the project?")) return;
+    if (!window.confirm("Remove this item from the project?")) return;
     startTransition(async () => {
       await removeSpecFromProject(projectSpecId, projectId);
     });
   }
 
-  // ── Render ────────────────────────────────────────────────────────────────────
+  function handleAssign(projectSpecId: string, itemType: string) {
+    startTransition(async () => {
+      await assignSpecToSchedule(projectSpecId, projectId, itemType);
+    });
+  }
+
+  function openDialog() { setSearch(""); setError(null); setDialogOpen(true); }
+  function closeDialog() { setDialogOpen(false); setSearch(""); setError(null); }
 
   return (
     <div style={{ maxWidth: 960 }}>
 
-      {/* ── Header ─────────────────────────────────────────────────────────── */}
+      {/* Header */}
       <div className="flex items-start justify-between mb-8">
         <div>
           <h1 style={{ fontFamily: "var(--font-playfair), serif", fontSize: 26, fontWeight: 700, color: "#1A1A1A", marginBottom: 4 }}>
@@ -142,22 +136,24 @@ export default function ProjectSpecsClient({
         </button>
       </div>
 
-      {/* ── Flat grid ──────────────────────────────────────────────────────── */}
+      {/* Card grid */}
       {projectSpecs.length > 0 ? (
         <div className="grid grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6 gap-3">
           {projectSpecs.map((ps) => (
-            <SpecCard
+            <LibraryCard
               key={ps.id}
               projectSpec={ps}
-              spec={specDetailMap.get(ps.spec_id) ?? null}
+              spec={ps.spec_id ? (specDetailMap.get(ps.spec_id) ?? null) : null}
+              schedules={schedules}
+              scheduleLabel={ps.item_type ? (scheduleLabelMap.get(ps.item_type) ?? ps.item_type) : null}
               onRemove={handleRemove}
               onOpen={setOpenSpecId}
+              onAssign={handleAssign}
               isPending={isPending}
             />
           ))}
         </div>
       ) : (
-        /* ── Empty state ─────────────────────────────────────────────────── */
         <div
           className="flex flex-col items-center justify-center py-20 text-center"
           style={{ borderRadius: 16, border: "1.5px dashed #E4E1DC", backgroundColor: "#FAFAF9" }}
@@ -169,7 +165,7 @@ export default function ProjectSpecsClient({
             No items yet
           </p>
           <p style={{ fontFamily: "var(--font-inter), sans-serif", fontSize: 13, color: "#9A9590", marginBottom: 24, lineHeight: 1.6, maxWidth: 320 }}>
-            Add products and materials from your studio library. Assign them to schedules once you're ready.
+            Add products from your studio library to consider them for this project.
           </p>
           <button
             type="button"
@@ -183,10 +179,9 @@ export default function ProjectSpecsClient({
         </div>
       )}
 
-      {/* ── Spec detail modal ─────────────────────────────────────────────── */}
       <SpecDetailModal specId={openSpecId} onClose={() => setOpenSpecId(null)} />
 
-      {/* ── Add to library dialog ─────────────────────────────────────────── */}
+      {/* Picker dialog */}
       <Dialog open={dialogOpen} onOpenChange={(open) => { if (!open) closeDialog(); }}>
         <DialogContent style={{ maxWidth: 500 }}>
           <DialogHeader>
@@ -194,42 +189,21 @@ export default function ProjectSpecsClient({
               Add to library
             </DialogTitle>
           </DialogHeader>
-
           <div className="flex flex-col gap-3 mt-2">
             <input
               autoFocus
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               placeholder="Search your studio library…"
-              style={{
-                width: "100%",
-                height: 38,
-                paddingLeft: 12,
-                paddingRight: 12,
-                fontFamily: "var(--font-inter), sans-serif",
-                fontSize: 13,
-                color: "#1A1A1A",
-                backgroundColor: "#FAFAF9",
-                border: "1.5px solid #E4E1DC",
-                borderRadius: 8,
-                outline: "none",
-                boxSizing: "border-box",
-              }}
+              style={{ width: "100%", height: 38, paddingLeft: 12, paddingRight: 12, fontFamily: "var(--font-inter), sans-serif", fontSize: 13, color: "#1A1A1A", backgroundColor: "#FAFAF9", border: "1.5px solid #E4E1DC", borderRadius: 8, outline: "none", boxSizing: "border-box" }}
             />
-
-            {error && (
-              <p style={{ fontFamily: "var(--font-inter), sans-serif", fontSize: 12, color: "#DC2626" }}>
-                {error}
-              </p>
-            )}
-
+            {error && <p style={{ fontFamily: "var(--font-inter), sans-serif", fontSize: 12, color: "#DC2626" }}>{error}</p>}
             <div className="flex flex-col gap-0.5 overflow-y-auto" style={{ maxHeight: 380, minHeight: 80 }}>
               {filteredLibrary.length === 0 ? (
                 <p style={{ fontFamily: "var(--font-inter), sans-serif", fontSize: 13, color: "#9A9590", textAlign: "center", padding: "28px 0" }}>
                   {librarySpecs.length === 0
                     ? "Your studio library is empty. Use Ida to add products first."
-                    : search
-                    ? "No matching items."
+                    : search ? "No matching items."
                     : "All library items are already in this project."}
                 </p>
               ) : (
@@ -242,15 +216,10 @@ export default function ProjectSpecsClient({
                     className="flex items-center gap-3 text-left transition-colors hover:bg-black/[0.04]"
                     style={{ padding: "8px 10px", borderRadius: 8, border: "none", background: "none", cursor: "pointer", width: "100%" }}
                   >
-                    <div
-                      className="flex items-center justify-center flex-shrink-0"
-                      style={{ width: 40, height: 40, borderRadius: 8, backgroundColor: "#F0EEEB", overflow: "hidden" }}
-                    >
-                      {spec.image_url ? (
-                        <img src={spec.image_url} alt={spec.name} style={{ objectFit: "cover", width: "100%", height: "100%" }} />
-                      ) : (
-                        <Package size={16} style={{ color: "#C0BEBB" }} />
-                      )}
+                    <div className="flex items-center justify-center flex-shrink-0" style={{ width: 40, height: 40, borderRadius: 8, backgroundColor: "#F0EEEB", overflow: "hidden" }}>
+                      {spec.image_url
+                        ? <img src={spec.image_url} alt={spec.name} style={{ objectFit: "cover", width: "100%", height: "100%" }} />
+                        : <Package size={16} style={{ color: "#C0BEBB" }} />}
                     </div>
                     <div style={{ flex: 1, minWidth: 0 }}>
                       <p style={{ fontFamily: "var(--font-inter), sans-serif", fontSize: 13, fontWeight: 500, color: "#1A1A1A", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
@@ -262,7 +231,6 @@ export default function ProjectSpecsClient({
                         </p>
                       )}
                     </div>
-                    {isPending && <Loader2 size={13} className="animate-spin" style={{ color: "#9A9590", flexShrink: 0 }} />}
                   </button>
                 ))
               )}
@@ -274,84 +242,110 @@ export default function ProjectSpecsClient({
   );
 }
 
-// ── SpecCard ───────────────────────────────────────────────────────────────────
+// ── AssignDropdown ─────────────────────────────────────────────────────────────
 
-function SpecCard({
-  projectSpec,
-  spec,
-  onRemove,
-  onOpen,
-  isPending,
+function AssignDropdown({ schedules, onAssign }: { schedules: Schedule[]; onAssign: (itemType: string) => void }) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+
+  return (
+    <div ref={ref} style={{ position: "relative" }}>
+      <div onClick={(e) => { e.stopPropagation(); setOpen((o) => !o); }}>
+        <div
+          className="flex items-center justify-between px-2.5 py-2 transition-colors hover:bg-black/[0.04]"
+          style={{ borderTop: "1px solid #F0EEEB" }}
+        >
+          <span style={{ fontFamily: "var(--font-inter), sans-serif", fontSize: 11, fontWeight: 500, color: "#9A9590" }}>
+            Add to schedule
+          </span>
+          <ChevronDown size={12} style={{ color: "#9A9590" }} />
+        </div>
+      </div>
+      {open && (
+        <>
+          <div className="fixed inset-0 z-10" onClick={() => setOpen(false)} />
+          <div
+            className="absolute z-20 py-1"
+            style={{ bottom: "calc(100% + 6px)", left: 0, minWidth: 180, backgroundColor: "#FFFFFF", borderRadius: 10, boxShadow: "0 4px 24px rgba(26,26,26,0.14)", border: "1px solid #E4E1DC" }}
+          >
+            {schedules.map(({ item_type, label }) => (
+              <button
+                key={item_type}
+                type="button"
+                onClick={() => { setOpen(false); onAssign(item_type); }}
+                className="w-full text-left transition-colors hover:bg-black/[0.04]"
+                style={{ display: "block", padding: "7px 12px", fontFamily: "var(--font-inter), sans-serif", fontSize: 12, color: "#4A4A4A", border: "none", background: "none", cursor: "pointer", width: "100%" }}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
+// ── LibraryCard ────────────────────────────────────────────────────────────────
+
+function LibraryCard({
+  projectSpec, spec, schedules, scheduleLabel, onRemove, onOpen, onAssign, isPending,
 }: {
   projectSpec: ProjectSpecRow;
   spec: SpecDetail | null;
+  schedules: Schedule[];
+  scheduleLabel: string | null;
   onRemove: (id: string) => void;
   onOpen: (specId: string) => void;
+  onAssign: (id: string, itemType: string) => void;
   isPending: boolean;
 }) {
   return (
-    <div
-      className="group relative text-left w-full"
-      style={{ background: "none", border: "none", padding: 0, cursor: "pointer" }}
-      onClick={() => onOpen(projectSpec.spec_id)}
-      role="button"
-      tabIndex={0}
-      onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") onOpen(projectSpec.spec_id); }}
-    >
+    <div className="group relative" style={{ opacity: isPending ? 0.7 : 1 }}>
       {/* Remove button */}
       <button
         type="button"
         onClick={(e) => { e.stopPropagation(); onRemove(projectSpec.id); }}
         disabled={isPending}
-        title="Remove from project"
         className="absolute opacity-0 group-hover:opacity-100 transition-opacity z-10"
-        style={{
-          top: 8, right: 8,
-          width: 24, height: 24,
-          border: "none",
-          background: "rgba(26,26,26,0.55)",
-          borderRadius: 6,
-          cursor: "pointer",
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-          color: "#FFFFFF",
-          padding: 0,
-          backdropFilter: "blur(4px)",
-        }}
+        style={{ top: 8, right: 8, width: 24, height: 24, border: "none", background: "rgba(26,26,26,0.55)", borderRadius: 6, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", color: "#FFFFFF", padding: 0, backdropFilter: "blur(4px)" }}
       >
         <X size={11} />
       </button>
 
-      <div
-        className="bg-white flex flex-col overflow-hidden transition-shadow hover:shadow-md"
-        style={{ borderRadius: 12, boxShadow: "0 2px 8px rgba(26,26,26,0.06)" }}
-      >
-        {/* Square image */}
-        <div className="relative flex-shrink-0" style={{ paddingTop: "100%" }}>
+      <div className="bg-white flex flex-col overflow-hidden transition-shadow hover:shadow-md" style={{ borderRadius: 12, boxShadow: "0 2px 8px rgba(26,26,26,0.06)" }}>
+        {/* Image */}
+        <div
+          className="relative flex-shrink-0"
+          style={{ paddingTop: "100%", cursor: "pointer" }}
+          onClick={() => projectSpec.spec_id && onOpen(projectSpec.spec_id)}
+          role="button"
+          tabIndex={0}
+          onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") projectSpec.spec_id && onOpen(projectSpec.spec_id); }}
+        >
           <div
             className="absolute inset-0 flex items-center justify-center"
-            style={{
-              backgroundColor: "#F0EEEB",
-              backgroundImage: spec?.image_url ? `url(${spec.image_url})` : undefined,
-              backgroundSize: "cover",
-              backgroundPosition: "center",
-            }}
+            style={{ backgroundColor: "#F0EEEB", backgroundImage: spec?.image_url ? `url(${spec.image_url})` : undefined, backgroundSize: "cover", backgroundPosition: "center" }}
           >
             {!spec?.image_url && <Package size={20} style={{ color: "#D4D2CF" }} />}
           </div>
         </div>
 
         {/* Text */}
-        <div className="p-2.5 flex flex-col gap-1">
-          {spec?.category_name && (
-            <p style={{ fontFamily: "var(--font-inter), sans-serif", fontSize: 9, fontWeight: 600, color: "#C0BEBB", textTransform: "uppercase", letterSpacing: "0.07em" }}>
-              {spec.category_name}
-            </p>
-          )}
-          <p
-            style={{ fontFamily: "var(--font-inter), sans-serif", fontSize: 12, fontWeight: 600, color: "#1A1A1A", lineHeight: 1.3, display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden" }}
-          >
+        <div className="p-2.5 flex flex-col gap-1 flex-1" style={{ cursor: "pointer" }} onClick={() => projectSpec.spec_id && onOpen(projectSpec.spec_id)}>
+          <div className="flex items-center justify-between gap-1">
+            {spec?.category_name && (
+              <p style={{ fontFamily: "var(--font-inter), sans-serif", fontSize: 9, fontWeight: 600, color: "#C0BEBB", textTransform: "uppercase", letterSpacing: "0.07em" }}>
+                {spec.category_name}
+              </p>
+            )}
+            {projectSpec.project_code && (
+              <span style={{ fontFamily: "var(--font-inter), sans-serif", fontSize: 9, fontWeight: 700, color: "#1A1A1A", backgroundColor: "#F0EEEB", borderRadius: 4, padding: "2px 5px", letterSpacing: "0.04em", flexShrink: 0 }}>
+                {projectSpec.project_code}
+              </span>
+            )}
+          </div>
+          <p style={{ fontFamily: "var(--font-inter), sans-serif", fontSize: 12, fontWeight: 600, color: "#1A1A1A", lineHeight: 1.3, display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden" }}>
             {spec?.name ?? "Unknown"}
           </p>
           {spec?.code && (
@@ -359,15 +353,18 @@ function SpecCard({
               {spec.code}
             </p>
           )}
-          {(spec?.cost_from || spec?.cost_to) && (
-            <p style={{ fontFamily: "var(--font-inter), sans-serif", fontSize: 10, color: "#9A9590" }}>
-              {spec!.cost_from && spec!.cost_to
-                ? `£${spec!.cost_from} – £${spec!.cost_to}`
-                : spec!.cost_from ? `from £${spec!.cost_from}` : `up to £${spec!.cost_to}`}
-              {spec!.cost_unit && ` ${spec!.cost_unit}`}
-            </p>
-          )}
         </div>
+
+        {/* Bottom bar: schedule label if assigned, assign dropdown if not */}
+        {scheduleLabel ? (
+          <div className="flex items-center px-2.5 py-2" style={{ borderTop: "1px solid #F0EEEB" }}>
+            <span style={{ fontFamily: "var(--font-inter), sans-serif", fontSize: 11, fontWeight: 600, color: "#1A1A1A" }}>
+              {scheduleLabel}
+            </span>
+          </div>
+        ) : (
+          <AssignDropdown schedules={schedules} onAssign={(itemType) => onAssign(projectSpec.id, itemType)} />
+        )}
       </div>
     </div>
   );

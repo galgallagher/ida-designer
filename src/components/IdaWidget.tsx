@@ -349,9 +349,6 @@ function SpecResultCard({
   const [saving, setSaving] = useState(false);
   const [savedId, setSavedId] = useState<string | null>(null);
   const [saveError, setSaveError] = useState<string | null>(null);
-  const [addingToProject, setAddingToProject] = useState(false);
-  const [addedToProject, setAddedToProject] = useState(false);
-  const [addToProjectError, setAddToProjectError] = useState<string | null>(null);
 
   // When the user types a URL, immediately use it as the selected image
   function handleManualUrl(val: string) {
@@ -394,11 +391,6 @@ function SpecResultCard({
       setSavedId(data.id as string);
       onSaved?.();
 
-      // Auto-add to project when inside a project page
-      if (projectId) {
-        handleAddToProject(data.id as string);
-      }
-
       // Dispatch event for canvas integration — the canvas page listens for
       // this to place the product image on the active canvas automatically.
       // Only fires when on the canvas page to avoid placing items unintentionally.
@@ -422,27 +414,6 @@ function SpecResultCard({
       setSaveError(e instanceof Error ? e.message : "Save failed");
     } finally {
       setSaving(false);
-    }
-  }
-
-  async function handleAddToProject(specId: string) {
-    if (!projectId) return;
-    setAddingToProject(true);
-    setAddToProjectError(null);
-    try {
-      const res = await fetch("/api/ida/add-to-project", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ spec_id: specId, project_id: projectId }),
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error ?? "Failed to add to project");
-      setAddedToProject(true);
-      router.refresh();
-    } catch (e) {
-      setAddToProjectError(e instanceof Error ? e.message : "Failed to add to project");
-    } finally {
-      setAddingToProject(false);
     }
   }
 
@@ -600,22 +571,6 @@ function SpecResultCard({
             </div>
           )}
 
-          {/* Auto-added to project confirmation */}
-          {projectId && addedToProject && (
-            <div
-              style={{
-                height: 34, backgroundColor: "#F0EEEB", borderRadius: 8,
-                display: "flex", alignItems: "center", justifyContent: "center",
-                fontFamily: "var(--font-inter), sans-serif", fontSize: 12, fontWeight: 600, color: "#9A9590",
-              }}
-            >
-              ✓ Added to {projectName ?? "project"}
-            </div>
-          )}
-
-          {addToProjectError && (
-            <p style={{ fontFamily: "var(--font-inter), sans-serif", fontSize: 11, color: "#EF4444" }}>{addToProjectError}</p>
-          )}
         </div>
       ) : (
         <button

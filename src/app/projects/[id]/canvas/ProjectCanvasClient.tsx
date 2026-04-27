@@ -342,9 +342,8 @@ export default function ProjectCanvasClient({ projectId, studioId, canvases: ini
   }
 
   // ── Place a library spec on canvas (from the picker modal) ─────────────────
-  // Reuses the spec-card shape. Fires add-to-project in the background so the
-  // spec ends up in the project's library too (idempotent — the endpoint
-  // handles duplicates).
+  // Visual only — places a spec-card shape on the canvas. Does NOT add to
+  // project specs; that only happens when the item is assigned to a schedule.
 
   async function handleLibrarySpecSelect(spec: LibrarySpecLite) {
     const editor = editorRef.current;
@@ -397,14 +396,6 @@ export default function ProjectCanvasClient({ projectId, studioId, canvases: ini
       },
     });
 
-    // Fire-and-forget: add to project's library if not already there.
-    fetch("/api/ida/add-to-project", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ spec_id: spec.id, project_id: projectId }),
-    }).catch((err) => {
-      console.error("[handleLibrarySpecSelect] add-to-project failed:", err);
-    });
   }
 
   // Reset placement offset when the picker closes so the next session starts

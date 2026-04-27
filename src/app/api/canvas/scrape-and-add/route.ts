@@ -1,12 +1,12 @@
 /**
  * POST /api/canvas/scrape-and-add
  *
- * Combined endpoint for canvas URL paste flow:
- *  1. Scrape the product URL (reuses scrape-spec logic via /api/ida/route)
- *  2. Save to studio library (via /api/ida/save)
- *  3. Add to project (via /api/ida/add-to-project)
+ * Canvas URL paste flow:
+ *  1. Scrape the product URL
+ *  2. Save to studio library (global → studio)
  *
- * Returns the saved spec data for display on the canvas.
+ * Does NOT add to project_specs — canvas is the "considering" stage.
+ * Items only become project specs when assigned to a schedule.
  *
  * Body: { url: string, project_id: string }
  */
@@ -66,23 +66,13 @@ export async function POST(req: Request) {
   }
 
   if (scrapeResult.already_exists) {
-    // Already in the library — just add to project. Look up the fuller spec
-    // data (code + category name) so the canvas card can show them.
-    const addRes = await fetch(`${baseUrl}/api/ida/add-to-project`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json", cookie: cookieHeader },
-      body: JSON.stringify({ spec_id: scrapeResult.spec_id, project_id }),
-    });
-    const addData = await addRes.json();
-
+    // Already in the studio library — return spec data for the canvas card.
     const { data: fullSpec } = await supabase
       .from("specs")
       .select("code, category:spec_categories(name)")
       .eq("id", scrapeResult.spec_id ?? "")
       .single();
 
-    // Supabase returns the joined row as either an object or an array
-    // depending on cardinality — normalise to a single category name.
     const categoryName = Array.isArray(fullSpec?.category)
       ? fullSpec?.category[0]?.name ?? null
       : (fullSpec?.category as { name?: string } | null)?.name ?? null;
@@ -95,7 +85,6 @@ export async function POST(req: Request) {
       image_url: scrapeResult.image_url ?? null,
       source_url: url,
       already_existed: true,
-      added_to_project: addData.ok ?? false,
     });
   }
 
@@ -130,15 +119,7 @@ export async function POST(req: Request) {
 
   const saved = await saveRes.json() as { id: string; name: string };
 
-  // ── Step 3: Add to project ──────────────────────────────────────────────────
-  const addRes = await fetch(`${baseUrl}/api/ida/add-to-project`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json", cookie: cookieHeader },
-    body: JSON.stringify({ spec_id: saved.id, project_id }),
-  });
-  const addData = await addRes.json();
-
-  // Resolve category name from the ID we matched earlier (if any).
+  // Resolve category name for the canvas card display.
   let categoryName: string | null = null;
   if (scrapeResult.category_id) {
     const { data: cat } = await supabase
@@ -161,7 +142,6 @@ export async function POST(req: Request) {
     cost_unit: scrapeResult.cost_unit ?? null,
     source_url: url,
     already_existed: false,
-    added_to_project: addData.ok ?? false,
   });
 }
 

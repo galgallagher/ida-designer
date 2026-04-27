@@ -319,13 +319,12 @@ export async function getSpecDetail(id: string): Promise<SpecDetailData | null> 
     });
   }
 
-  // Projects — join through project_options for new rows; fall back to direct project_id for legacy rows
+  // Projects this spec has been added to
   const { data: projectSpecData } = await supabase
     .from("project_specs")
-    .select("project_id, project_option_id")
+    .select("project_id")
     .eq("spec_id", id);
 
-  // Collect unique project IDs from both the legacy column and the new option join
   const directProjectIds = (projectSpecData ?? [])
     .map((p) => p.project_id)
     .filter(Boolean) as string[];
@@ -461,43 +460,8 @@ export async function addSpecToProjectFromLibrary(
     .from("projects").select("id, studio_id").eq("id", projectId).eq("studio_id", studioId).single();
   if (!project) return { error: "Project not found." };
 
-  // Resolve or create the default option for this project
-  let optionId: string | null = null;
-  const { data: existingOption } = await supabase
-    .from("project_options")
-    .select("id")
-    .eq("project_id", projectId)
-    .eq("is_default", true)
-    .single();
-
-  if (existingOption) {
-    optionId = existingOption.id;
-  } else {
-    const { data: anyOption } = await supabase
-      .from("project_options")
-      .select("id")
-      .eq("project_id", projectId)
-      .order("sort_order")
-      .limit(1)
-      .single();
-
-    if (anyOption) {
-      optionId = anyOption.id;
-    } else {
-      const { data: created } = await supabase
-        .from("project_options")
-        .insert({ studio_id: studioId, project_id: projectId, name: "Option A", label: "A", sort_order: 0, is_default: true })
-        .select("id")
-        .single();
-      optionId = created?.id ?? null;
-    }
-  }
-
-  if (!optionId) return { error: "Could not resolve project option." };
-
   const { error: dbError } = await supabase.from("project_specs").insert({
     project_id: projectId,
-    project_option_id: optionId,
     studio_id: studioId,
     spec_id: specId,
     item_type: itemType,

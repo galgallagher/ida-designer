@@ -34,39 +34,26 @@ export default async function ProjectDrawingsPage({ params }: PageProps) {
 
   if (!project) notFound();
 
-  // ── Parallel: options + studio finishes ──────────────────────────────────────
-  const [optionsResult, studioFinishesResult] = await Promise.all([
-    supabase
-      .from("project_options")
-      .select("*")
-      .eq("project_id", projectId)
-      .order("sort_order"),
+  // ── Parallel: studio finishes + drawings + pinned specs ─────────────────────
+  const [studioFinishesResult, drawingsResult, pinnedSpecsResult] = await Promise.all([
     supabase
       .from("studio_finishes")
       .select("id, code, name, colour_hex")
       .eq("studio_id", studioId)
       .order("code"),
+    supabase
+      .from("drawings")
+      .select("id, name, drawing_type, order_index")
+      .eq("project_id", projectId)
+      .order("order_index"),
+    supabase
+      .from("project_specs")
+      .select("id, spec_id, drawing_id, item_type, status")
+      .eq("project_id", projectId)
+      .not("drawing_id", "is", null),
   ]);
 
-  const options = optionsResult.data ?? [];
   const studioFinishes = studioFinishesResult.data ?? [];
-  const optionIds = options.map((o) => o.id);
-
-  // ── Parallel: drawings + pinned specs (need optionIds) ───────────────────────
-  const [drawingsResult, pinnedSpecsResult] = optionIds.length > 0
-    ? await Promise.all([
-        supabase
-          .from("drawings")
-          .select("id, name, drawing_type, project_option_id, order_index")
-          .in("project_option_id", optionIds)
-          .order("order_index"),
-        supabase
-          .from("project_specs")
-          .select("id, spec_id, drawing_id, item_type, status, project_option_id")
-          .in("project_option_id", optionIds)
-          .not("drawing_id", "is", null),
-      ])
-    : [{ data: [] }, { data: [] }];
 
   const drawings = drawingsResult.data ?? [];
   const drawingIds = drawings.map((d) => d.id);
@@ -84,7 +71,7 @@ export default async function ProjectDrawingsPage({ params }: PageProps) {
 
   // ── Fetch spec names for pinned specs ─────────────────────────────────────────
   const pinnedSpecs = pinnedSpecsResult.data ?? [];
-  const specIds = [...new Set(pinnedSpecs.map((ps) => ps.spec_id))];
+  const specIds = [...new Set(pinnedSpecs.map((ps) => ps.spec_id).filter((id): id is string => id !== null))];
   const specNamesResult = specIds.length > 0
     ? await supabase
         .from("specs")
@@ -97,7 +84,6 @@ export default async function ProjectDrawingsPage({ params }: PageProps) {
     <ProjectDrawingsClient
       projectId={projectId}
       projectName={project.name}
-      options={options}
       drawings={drawings as Parameters<typeof ProjectDrawingsClient>[0]["drawings"]}
       drawingFinishes={drawingFinishes}
       studioFinishes={studioFinishes}

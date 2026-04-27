@@ -94,9 +94,16 @@ export default function ProjectNav({
       {/* Nav sections */}
       <nav className="flex flex-col gap-0.5 px-2 flex-1">
         {sections.map((section) => {
+          // Use exact match if another section is a child of this href,
+          // to prevent the parent from staying active when the child is open.
+          const hasChildSection = sections.some(
+            (s) => s.href !== section.href && s.href.startsWith(section.href + "/")
+          );
           const isActive = section.href === base
             ? pathname === base
-            : pathname.startsWith(section.href);
+            : hasChildSection
+              ? pathname === section.href
+              : pathname.startsWith(section.href);
           const Icon = section.icon;
 
           return (

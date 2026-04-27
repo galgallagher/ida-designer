@@ -39,7 +39,6 @@ async function getProjectGuard(projectId: string) {
 export async function addDrawing(
   projectId: string,
   payload: {
-    project_option_id: string;
     name: string;
     drawing_type: DrawingType;
   }
@@ -50,22 +49,11 @@ export async function addDrawing(
   const name = payload.name.trim();
   if (!name) return { error: "Drawing name is required.", drawingId: null };
 
-  // Verify the option belongs to this project + studio
-  const { data: option } = await supabase
-    .from("project_options")
-    .select("id")
-    .eq("id", payload.project_option_id)
-    .eq("project_id", projectId)
-    .eq("studio_id", studioId)
-    .single();
-
-  if (!option) return { error: "Option not found.", drawingId: null };
-
-  // Get current max order_index for this option
+  // Get current max order_index for this project
   const { data: existing } = await supabase
     .from("drawings")
     .select("order_index")
-    .eq("project_option_id", payload.project_option_id)
+    .eq("project_id", projectId)
     .order("order_index", { ascending: false })
     .limit(1);
 
@@ -74,8 +62,7 @@ export async function addDrawing(
   const { data: newDrawing, error: dbError } = await supabase
     .from("drawings")
     .insert({
-      project_id: projectId,                         // legacy FK
-      project_option_id: payload.project_option_id,
+      project_id: projectId,
       studio_id: studioId,
       name,
       drawing_type: payload.drawing_type,
@@ -191,46 +178,3 @@ export async function deleteDrawing(
   return { error: null };
 }
 
-// ── Add project option ────────────────────────────────────────────────────────
-
-export async function addProjectOption(
-  projectId: string,
-  name: string
-): Promise<{ error: string | null; optionId: string | null }> {
-  const { error, supabase, studioId } = await getProjectGuard(projectId);
-  if (error || !supabase || !studioId) return { error: error ?? "Not authorised.", optionId: null };
-
-  const trimmedName = name.trim();
-  if (!trimmedName) return { error: "Option name is required.", optionId: null };
-
-  const { data: existing } = await supabase
-    .from("project_options")
-    .select("label, sort_order")
-    .eq("project_id", projectId)
-    .order("sort_order");
-
-  const existingLabels = new Set((existing ?? []).map((o) => o.label));
-  const nextLabel = "ABCDEFGHIJKLMNOPQRSTUVWXYZ".split("").find((l) => !existingLabels.has(l));
-  if (!nextLabel) return { error: "Maximum 26 options reached.", optionId: null };
-
-  const { data: newOption, error: dbError } = await supabase
-    .from("project_options")
-    .insert({
-      studio_id: studioId,
-      project_id: projectId,
-      name: trimmedName,
-      label: nextLabel,
-      sort_order: (existing ?? []).length,
-      is_default: (existing ?? []).length === 0,
-    })
-    .select("id")
-    .single();
-
-  if (dbError) {
-    if (dbError.code === "23505") return { error: `Option "${nextLabel}" already exists.`, optionId: null };
-    return { error: dbError.message, optionId: null };
-  }
-
-  revalidatePath(`/projects/${projectId}/drawings`);
-  return { error: null, optionId: newOption.id };
-}

@@ -1,13 +1,11 @@
 /**
  * Project Schedule — /projects/[id]/specs/schedule
  *
- * Organises project library items into schedule types (FF&E, Joinery, etc.).
- * Unassigned items (no item_type) are shown at the top — click to assign.
- * Assigned items are grouped by schedule type in the configured order.
+ * Shows confirmed project specs grouped by schedule type.
+ * Items reach here only after being assigned from the Project Library.
+ * "Remove from schedule" sends them back to project_library_items.
  *
- * Schedule order/visibility comes from project_schedule_preferences if the
- * project has customised them, otherwise falls back to studio_spec_preferences,
- * otherwise falls back to system defaults.
+ * Schedule order/visibility: project prefs → studio prefs → system defaults.
  */
 
 import { notFound } from "next/navigation";
@@ -41,6 +39,7 @@ export default async function ProjectSchedulePage({ params }: PageProps) {
       .select("*")
       .eq("project_id", projectId)
       .eq("studio_id", studioId)
+      .not("item_type", "is", null)
       .order("created_at"),
     supabase
       .from("specs")

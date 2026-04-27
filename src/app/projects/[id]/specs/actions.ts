@@ -1,13 +1,14 @@
 "use server";
 
 /**
- * Server actions for project spec management.
+ * Server actions for project specs.
  *
- * Project Library (/specs): add/remove specs. item_type is optional —
- * items live in the library without a schedule assignment.
+ * project_specs holds items at both stages:
+ *  - item_type = null  → in the Project Library (considering, no code yet)
+ *  - item_type = set   → assigned to a schedule (committed, project_code allocated)
  *
- * Project Schedule (/specs/schedule): assign/unassign schedule types
- * on existing project_specs rows via updateProjectSpec.
+ * The Project Library page filters for item_type IS NULL.
+ * The Schedule page filters for item_type IS NOT NULL.
  */
 
 import { revalidatePath } from "next/cache";
@@ -37,60 +38,65 @@ async function getProjectGuard(projectId: string) {
   return { error: null, supabase, studioId };
 }
 
-// ── Resolve or create the default project option ──────────────────────────────
+// ── Category abbreviation resolution (subcategory takes priority) ─────────────
 
-async function resolveDefaultOption(
+async function resolveCategoryAbbreviation(
   supabase: Awaited<ReturnType<typeof createClient>>,
-  projectId: string,
-  studioId: string
+  categoryId: string
 ): Promise<string | null> {
-  const { data: existing } = await supabase
-    .from("project_options")
-    .select("id")
-    .eq("project_id", projectId)
-    .eq("is_default", true)
+  const { data: cat } = await supabase
+    .from("spec_categories")
+    .select("abbreviation, parent_id")
+    .eq("id", categoryId)
     .single();
 
-  if (existing) return existing.id;
+  if (!cat) return null;
+  if (cat.abbreviation) return cat.abbreviation;
 
-  const { data: any } = await supabase
-    .from("project_options")
-    .select("id")
-    .eq("project_id", projectId)
-    .order("sort_order")
-    .limit(1)
-    .single();
+  if (cat.parent_id) {
+    const { data: parent } = await supabase
+      .from("spec_categories")
+      .select("abbreviation")
+      .eq("id", cat.parent_id)
+      .single();
+    return parent?.abbreviation ?? null;
+  }
 
-  if (any) return any.id;
-
-  const { data: created } = await supabase
-    .from("project_options")
-    .insert({
-      studio_id: studioId,
-      project_id: projectId,
-      name: "Option A",
-      label: "A",
-      sort_order: 0,
-      is_default: true,
-    })
-    .select("id")
-    .single();
-
-  return created?.id ?? null;
+  return null;
 }
 
-// ── Add spec to project library ───────────────────────────────────────────────
-// item_type is intentionally NOT required here — specs land in the library
-// without a schedule assignment. They get assigned via the Schedule tab.
+// ── Gap-filling code allocator ────────────────────────────────────────────────
+
+async function allocateProjectSpecCode(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  projectId: string,
+  abbreviation: string
+): Promise<string> {
+  const { data } = await supabase
+    .from("project_specs")
+    .select("project_code")
+    .eq("project_id", projectId)
+    .like("project_code", `${abbreviation}%`);
+
+  const used = new Set(
+    (data ?? [])
+      .map((r) => r.project_code)
+      .filter(Boolean)
+      .map((code) => parseInt(code!.slice(abbreviation.length), 10))
+      .filter((n) => !isNaN(n))
+  );
+
+  let n = 1;
+  while (used.has(n)) n++;
+
+  return `${abbreviation}${String(n).padStart(2, "0")}`;
+}
+
+// ── Add spec to project library (item_type = null, no code yet) ───────────────
 
 export async function addSpecToProject(
   projectId: string,
-  payload: {
-    spec_id: string;
-    item_type?: string | null;
-    drawing_id?: string | null;
-    notes?: string | null;
-  }
+  payload: { spec_id: string; notes?: string | null }
 ): Promise<{ error: string | null }> {
   const { error, supabase, studioId } = await getProjectGuard(projectId);
   if (error || !supabase || !studioId) return { error: error ?? "Not authorised." };
@@ -104,31 +110,29 @@ export async function addSpecToProject(
 
   if (!spec) return { error: "Spec not found in your library." };
 
-  const optionId = await resolveDefaultOption(supabase, projectId, studioId);
-  if (!optionId) return { error: "Could not resolve project option." };
-
   const { error: dbError } = await supabase.from("project_specs").insert({
     project_id: projectId,
-    project_option_id: optionId,
     studio_id: studioId,
     spec_id: payload.spec_id,
-    item_type: payload.item_type ?? null,
-    drawing_id: payload.drawing_id ?? null,
+    item_type: null,
     notes: payload.notes ?? null,
     status: "draft",
+    project_code: null,
   });
 
   if (dbError) {
-    if (dbError.code === "23505") return { error: "This spec is already in the project." };
+    if (dbError.code === "23505") return { error: "This item is already in the project." };
     return { error: dbError.message };
   }
 
   revalidatePath(`/projects/${projectId}/specs`);
-  revalidatePath(`/projects/${projectId}/specs/schedule`);
   return { error: null };
 }
 
-// ── Remove spec from project entirely ────────────────────────────────────────
+// ── Remove spec from project ──────────────────────────────────────────────────
+// If a project_code has been allocated the slot is permanent — detach the spec
+// (set spec_id to null) rather than deleting the row.
+// If no code has been allocated yet the row can be fully deleted.
 
 export async function removeSpecFromProject(
   projectSpecId: string,
@@ -137,9 +141,60 @@ export async function removeSpecFromProject(
   const { error, supabase, studioId } = await getProjectGuard(projectId);
   if (error || !supabase || !studioId) return { error: error ?? "Not authorised." };
 
+  const { data: row } = await supabase
+    .from("project_specs")
+    .select("project_code")
+    .eq("id", projectSpecId)
+    .eq("studio_id", studioId)
+    .single();
+
+  if (row?.project_code) {
+    // Slot is permanent — detach spec, keep code + item_type
+    const { error: dbError } = await supabase
+      .from("project_specs")
+      .update({ spec_id: null })
+      .eq("id", projectSpecId)
+      .eq("studio_id", studioId);
+    if (dbError) return { error: dbError.message };
+  } else {
+    // Never committed — delete entirely
+    const { error: dbError } = await supabase
+      .from("project_specs")
+      .delete()
+      .eq("id", projectSpecId)
+      .eq("studio_id", studioId);
+    if (dbError) return { error: dbError.message };
+  }
+
+  revalidatePath(`/projects/${projectId}/specs`);
+  revalidatePath(`/projects/${projectId}/specs/schedule`);
+  return { error: null };
+}
+
+// ── Reassign a spec into an existing empty slot ───────────────────────────────
+// Used when a coded slot has spec_id = null and a new spec is being slotted in.
+// Does NOT allocate a new code — the existing project_code is retained.
+
+export async function reassignSpecSlot(
+  projectSpecId: string,
+  projectId: string,
+  newSpecId: string
+): Promise<{ error: string | null }> {
+  const { error, supabase, studioId } = await getProjectGuard(projectId);
+  if (error || !supabase || !studioId) return { error: error ?? "Not authorised." };
+
+  const { data: spec } = await supabase
+    .from("specs")
+    .select("id")
+    .eq("id", newSpecId)
+    .eq("studio_id", studioId)
+    .single();
+
+  if (!spec) return { error: "Spec not found in your library." };
+
   const { error: dbError } = await supabase
     .from("project_specs")
-    .delete()
+    .update({ spec_id: newSpecId })
     .eq("id", projectSpecId)
     .eq("studio_id", studioId);
 
@@ -150,8 +205,9 @@ export async function removeSpecFromProject(
   return { error: null };
 }
 
-// ── Assign spec to a schedule type ────────────────────────────────────────────
-// Sets item_type on an existing project_spec. Pass null to unassign.
+// ── Assign to schedule — allocates project_code on first assignment ───────────
+// Pass null to remove from schedule (clears item_type and project_code,
+// sending the item back to the Project Library view).
 
 export async function assignSpecToSchedule(
   projectSpecId: string,
@@ -161,29 +217,66 @@ export async function assignSpecToSchedule(
   const { error, supabase, studioId } = await getProjectGuard(projectId);
   if (error || !supabase || !studioId) return { error: error ?? "Not authorised." };
 
-  const { error: dbError } = await supabase
-    .from("project_specs")
-    .update({ item_type: itemType })
-    .eq("id", projectSpecId)
-    .eq("studio_id", studioId);
+  if (itemType === null) {
+    // Remove from schedule — clear item_type and code, return to Project Library.
+    // spec_id stays intact so the item remains in the library for reassignment.
+    const { error: dbError } = await supabase
+      .from("project_specs")
+      .update({ item_type: null, project_code: null })
+      .eq("id", projectSpecId)
+      .eq("studio_id", studioId);
 
-  if (dbError) return { error: dbError.message };
+    if (dbError) return { error: dbError.message };
+  } else {
+    // Assigning — allocate a code if not already set
+    const { data: ps } = await supabase
+      .from("project_specs")
+      .select("project_code, spec_id")
+      .eq("id", projectSpecId)
+      .single();
+
+    let projectCode = ps?.project_code ?? null;
+
+    if (!projectCode && ps?.spec_id) {
+      const { data: spec } = await supabase
+        .from("specs")
+        .select("category_id")
+        .eq("id", ps.spec_id)
+        .single();
+
+      if (spec?.category_id) {
+        const abbreviation = await resolveCategoryAbbreviation(supabase, spec.category_id);
+        if (abbreviation) {
+          projectCode = await allocateProjectSpecCode(supabase, projectId, abbreviation);
+        }
+      }
+    }
+
+    const { error: dbError } = await supabase
+      .from("project_specs")
+      .update({ item_type: itemType, project_code: projectCode })
+      .eq("id", projectSpecId)
+      .eq("studio_id", studioId);
+
+    if (dbError) return { error: dbError.message };
+  }
 
   revalidatePath(`/projects/${projectId}/specs`);
   revalidatePath(`/projects/${projectId}/specs/schedule`);
   return { error: null };
 }
 
-// ── Update spec status / notes ────────────────────────────────────────────────
+// ── Update spec notes / status ────────────────────────────────────────────────
 
 export async function updateProjectSpec(
   projectSpecId: string,
   projectId: string,
   payload: {
-    item_type?: string | null;
-    drawing_id?: string | null;
     notes?: string | null;
     status?: SpecStatus;
+    quantity?: number | null;
+    unit?: string | null;
+    project_price?: number | null;
   }
 ): Promise<{ error: string | null }> {
   const { error, supabase, studioId } = await getProjectGuard(projectId);

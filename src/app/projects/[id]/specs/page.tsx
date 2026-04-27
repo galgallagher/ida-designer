@@ -1,14 +1,15 @@
 /**
  * Project Library — /projects/[id]/specs
  *
- * A flat grid of all products and materials being considered for this project.
- * Items are added from the studio library with one click — no schedule
- * assignment at this stage. Schedule assignment happens on the Specs tab.
+ * Shows project_specs WHERE item_type IS NULL — items under consideration.
+ * Each card has an "Add to schedule" dropdown which sets item_type and
+ * allocates a project code, moving the item to the Schedule view.
  */
 
 import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { getCurrentStudioId } from "@/lib/studio-context";
+import { SYSTEM_SCHEDULES, SYSTEM_LABEL_MAP } from "@/lib/schedule-types";
 import ProjectSpecsClient from "./ProjectSpecsClient";
 
 interface PageProps {
@@ -24,19 +25,28 @@ export default async function ProjectSpecsPage({ params }: PageProps) {
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) notFound();
 
-  const [{ data: projectData }, projectSpecsResult, libraryResult] = await Promise.all([
+  const [{ data: projectData }, libraryResult, allProjectSpecsResult, studioSpecsResult] = await Promise.all([
     supabase
       .from("projects")
       .select("id, name")
       .eq("id", projectId)
       .eq("studio_id", studioId)
       .single(),
+    // Library: only rows with a spec attached (empty slots live on the Schedule page only)
     supabase
       .from("project_specs")
       .select("*")
       .eq("project_id", projectId)
       .eq("studio_id", studioId)
+      .not("spec_id", "is", null)
       .order("created_at"),
+    // Same query — used for picker exclusion (prevent adding duplicates)
+    supabase
+      .from("project_specs")
+      .select("spec_id")
+      .eq("project_id", projectId)
+      .eq("studio_id", studioId),
+    // Studio library for the picker
     supabase
       .from("specs")
       .select("id, name, code, image_url, cost_from, cost_to, cost_unit, category_id")
@@ -46,11 +56,10 @@ export default async function ProjectSpecsPage({ params }: PageProps) {
 
   if (!projectData) notFound();
 
-  const projectSpecs = projectSpecsResult.data ?? [];
-  const rawLibrary  = libraryResult.data ?? [];
+  // ── Resolve category names ─────────────────────────────────────────────────
 
-  // Resolve category names for library specs
-  const catIds = [...new Set(rawLibrary.map((s) => s.category_id).filter(Boolean))] as string[];
+  const rawSpecs = studioSpecsResult.data ?? [];
+  const catIds = [...new Set(rawSpecs.map((s) => s.category_id).filter(Boolean))] as string[];
   const catMap = new Map<string, string>();
   if (catIds.length > 0) {
     const { data: cats } = await supabase
@@ -60,7 +69,7 @@ export default async function ProjectSpecsPage({ params }: PageProps) {
     (cats ?? []).forEach((c) => catMap.set(c.id, c.name));
   }
 
-  const librarySpecs = rawLibrary.map((s) => ({
+  const librarySpecs = rawSpecs.map((s) => ({
     id: s.id,
     name: s.name,
     code: s.code ?? null,
@@ -71,12 +80,52 @@ export default async function ProjectSpecsPage({ params }: PageProps) {
     cost_unit: s.cost_unit,
   }));
 
+  // ── Schedule list for assign dropdown ─────────────────────────────────────
+
+  const { data: projectPrefs } = await supabase
+    .from("project_schedule_preferences")
+    .select("item_type, display_name, is_visible, sort_order")
+    .eq("project_id", projectId)
+    .order("sort_order");
+
+  let schedules: { item_type: string; label: string }[];
+
+  if (projectPrefs && projectPrefs.length > 0) {
+    schedules = projectPrefs
+      .filter((p) => p.is_visible)
+      .map((p) => ({ item_type: p.item_type, label: p.display_name || SYSTEM_LABEL_MAP.get(p.item_type) || p.item_type }));
+  } else {
+    const { data: studioPrefs } = await supabase
+      .from("studio_spec_preferences")
+      .select("item_type, display_name, is_visible, sort_order")
+      .eq("studio_id", studioId)
+      .order("sort_order");
+
+    if (studioPrefs && studioPrefs.length > 0) {
+      const savedTypes = new Set(studioPrefs.map((p) => p.item_type));
+      schedules = [
+        ...studioPrefs,
+        ...SYSTEM_SCHEDULES.filter((s) => !savedTypes.has(s.type)).map((s, i) => ({
+          item_type: s.type, display_name: null as string | null, is_visible: true, sort_order: studioPrefs.length + i,
+        })),
+      ]
+        .filter((p) => p.is_visible)
+        .map((p) => ({ item_type: p.item_type, label: p.display_name || SYSTEM_LABEL_MAP.get(p.item_type) || p.item_type }));
+    } else {
+      schedules = SYSTEM_SCHEDULES.map((s) => ({ item_type: s.type, label: s.label }));
+    }
+  }
+
+  const allProjectSpecIds = new Set((allProjectSpecsResult.data ?? []).map((r) => r.spec_id).filter((id): id is string => id !== null));
+
   return (
     <ProjectSpecsClient
       projectId={projectId}
       projectName={projectData.name}
-      projectSpecs={projectSpecs}
+      projectSpecs={libraryResult.data ?? []}
       librarySpecs={librarySpecs}
+      allProjectSpecIds={[...allProjectSpecIds]}
+      schedules={schedules}
     />
   );
 }

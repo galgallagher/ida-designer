@@ -139,7 +139,6 @@ export type ContactRow = {
 export type DrawingRow = {
   id: string;
   project_id: string;                 // LEGACY — kept during transition; drop in migration 033
-  project_option_id: string | null;   // new (migration 031)
   studio_id: string | null;           // new (migration 031) — denormalised for RLS
   drawing_type: DrawingType | null;   // new (migration 031)
   name: string;
@@ -290,15 +289,16 @@ export type SpecFieldValueRow = {
 export type ProjectSpecRow = {
   id: string;
   project_id: string;                  // LEGACY — kept during transition; drop in migration 033
-  project_option_id: string | null;    // new (migration 032)
-  studio_id: string | null;            // new (migration 032) — denormalised for RLS
-  spec_id: string;
+  studio_id: string | null;            // denormalised for RLS
+  spec_id: string | null;              // null = empty slot (spec detached, code retained) — migration 040
   drawing_id: string | null;
-  item_type: string | null;            // text after migration 034 (was spec_item_type enum)
+  item_type: string | null;            // schedule type e.g. "ffe", "joinery"
   quantity: number | null;
-  unit: string | null;
+  unit: string | null;                 // e.g. "m²" — TODO: auto-populate from scraper
   notes: string | null;
   status: SpecStatus;
+  project_code: string | null;          // e.g. "FB01" — allocated at schedule assignment (migration 039)
+  project_price: number | null;         // project-specific price override (migration 040)
   created_at: string;
   updated_at: string;
 };
@@ -345,21 +345,6 @@ export type GlobalSpecFieldRow = {
 export type GlobalSpecTagRow = {
   global_spec_id: string;
   tag: string;
-};
-
-// ── Project Options (migration 027) ───────────────────────────────────────────
-
-export type ProjectOptionRow = {
-  id: string;
-  studio_id: string;
-  project_id: string;
-  name: string;
-  label: string;          // char(1): "A", "B", "C"
-  description: string | null;
-  sort_order: number;
-  is_default: boolean;
-  created_at: string;
-  updated_at: string;
 };
 
 // ── Studio Finishes (migration 028) ───────────────────────────────────────────
@@ -496,7 +481,6 @@ export type ContactPersonInsert = Insertable<Omit<ContactPersonRow, "id" | "crea
 export type GlobalSpecInsert = Insertable<Omit<GlobalSpecRow, "id" | "scraped_at" | "updated_at">>;
 export type GlobalSpecFieldInsert = Insertable<Omit<GlobalSpecFieldRow, "id">>;
 export type GlobalSpecTagInsert = GlobalSpecTagRow;
-export type ProjectOptionInsert = Insertable<Omit<ProjectOptionRow, "id" | "created_at" | "updated_at">>;
 export type StudioFinishInsert = Insertable<Omit<StudioFinishRow, "id" | "created_at" | "updated_at">>;
 // DrawingFinishRow has a composite PK — both columns are required on insert
 export type DrawingFinishInsert = Omit<DrawingFinishRow, "created_at">;
@@ -672,12 +656,6 @@ export type Database = {
         Row: GlobalSpecTagRow;
         Insert: GlobalSpecTagInsert;
         Update: Partial<GlobalSpecTagInsert>;
-        Relationships: EmptyRelationships;
-      };
-      project_options: {
-        Row: ProjectOptionRow;
-        Insert: ProjectOptionInsert;
-        Update: Partial<ProjectOptionInsert>;
         Relationships: EmptyRelationships;
       };
       studio_finishes: {

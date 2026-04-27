@@ -29,26 +29,20 @@ export default async function ProjectOverviewPage({ params }: PageProps) {
   const { id } = await params;
   const supabase = await createClient();
 
-  // Round 1: project + options + team — all only need the id from the URL
-  const [{ data: projectData }, { data: optionsData }, { count: teamCount }] = await Promise.all([
+  // Round 1: project + team
+  const [{ data: projectData }, { count: teamCount }] = await Promise.all([
     supabase.from("projects").select("*").eq("id", id).single(),
-    supabase.from("project_options").select("id").eq("project_id", id),
     supabase.from("project_members").select("*", { count: "exact", head: true }).eq("project_id", id),
   ]);
 
   if (!projectData) notFound();
   const project = projectData;
-  const optionIds = (optionsData ?? []).map((o) => o.id);
 
-  // Round 2: client + drawing/spec counts — need client_id and optionIds from round 1
+  // Round 2: client + drawing/spec counts
   const [{ data: clientData }, { count: drawingCount }, { count: specCount }] = await Promise.all([
     supabase.from("clients").select("name, address").eq("id", project.client_id).single(),
-    optionIds.length > 0
-      ? supabase.from("drawings").select("*", { count: "exact", head: true }).in("project_option_id", optionIds)
-      : Promise.resolve({ count: 0 }),
-    optionIds.length > 0
-      ? supabase.from("project_specs").select("*", { count: "exact", head: true }).in("project_option_id", optionIds)
-      : Promise.resolve({ count: 0 }),
+    supabase.from("drawings").select("*", { count: "exact", head: true }).eq("project_id", id),
+    supabase.from("project_specs").select("*", { count: "exact", head: true }).eq("project_id", id),
   ]);
 
   const client = clientData;

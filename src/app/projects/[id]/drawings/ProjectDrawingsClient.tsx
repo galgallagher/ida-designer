@@ -10,7 +10,6 @@
 
 import { useState, useTransition, useMemo } from "react";
 import { Plus, ImageIcon, Loader2, Trash2, X } from "lucide-react";
-import OptionTabs from "@/components/OptionTabs";
 import {
   Sheet,
   SheetContent,
@@ -23,8 +22,8 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { addDrawing, addFinishToDrawing, removeFinishFromDrawing, deleteDrawing, addProjectOption } from "./actions";
-import type { ProjectOptionRow, DrawingType, SpecItemType, SpecStatus } from "@/types/database";
+import { addDrawing, addFinishToDrawing, removeFinishFromDrawing, deleteDrawing } from "./actions";
+import type { DrawingType, SpecItemType, SpecStatus } from "@/types/database";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -32,7 +31,6 @@ export type DrawingEntry = {
   id: string;
   name: string;
   drawing_type: DrawingType | null;
-  project_option_id: string | null;
   order_index: number;
 };
 
@@ -51,17 +49,15 @@ export type StudioFinishEntry = {
 
 export type PinnedSpecEntry = {
   id: string;
-  spec_id: string;
+  spec_id: string | null;
   drawing_id: string | null;
   item_type: SpecItemType | null;
   status: SpecStatus;
-  project_option_id: string | null;
 };
 
 interface Props {
   projectId: string;
   projectName: string;
-  options: ProjectOptionRow[];
   drawings: DrawingEntry[];
   drawingFinishes: DrawingFinishEntry[];
   studioFinishes: StudioFinishEntry[];
@@ -114,31 +110,17 @@ const labelStyle: React.CSSProperties = {
 export default function ProjectDrawingsClient({
   projectId,
   projectName,
-  options,
   drawings,
   drawingFinishes,
   studioFinishes,
   pinnedSpecs,
   specNames,
 }: Props) {
-  // ── Active option ────────────────────────────────────────────────────────────
-  const defaultOption = options.find((o) => o.is_default) ?? options[0] ?? null;
-  const [activeOptionId, setActiveOptionId] = useState<string | null>(defaultOption?.id ?? null);
-
-  // ── Sheet panel state ────────────────────────────────────────────────────────
   const [selectedDrawingId, setSelectedDrawingId] = useState<string | null>(null);
-
-  // ── Add drawing dialog ───────────────────────────────────────────────────────
   const [addDrawingOpen, setAddDrawingOpen] = useState(false);
   const [drawingName, setDrawingName] = useState("");
   const [drawingType, setDrawingType] = useState<DrawingType | "">("");
   const [addDrawingError, setAddDrawingError] = useState<string | null>(null);
-
-  // ── Add option dialog ────────────────────────────────────────────────────────
-  const [addOptionOpen, setAddOptionOpen] = useState(false);
-  const [optionName, setOptionName] = useState("");
-  const [optionError, setOptionError] = useState<string | null>(null);
-
   const [isPending, startTransition] = useTransition();
   const [sheetError, setSheetError] = useState<string | null>(null);
   const [selectedFinishId, setSelectedFinishId] = useState("");
@@ -151,11 +133,6 @@ export default function ProjectDrawingsClient({
     return map;
   }, [specNames]);
 
-  // Drawings for active option, grouped by drawing_type
-  const activeDrawings = useMemo(() => {
-    if (!activeOptionId) return [];
-    return drawings.filter((d) => d.project_option_id === activeOptionId);
-  }, [drawings, activeOptionId]);
 
   // Finishes for a given drawing, sorted by order_index
   function getDrawingFinishes(drawingId: string): StudioFinishEntry[] {
@@ -198,11 +175,10 @@ export default function ProjectDrawingsClient({
 
   function handleAddDrawing(e: React.FormEvent) {
     e.preventDefault();
-    if (!activeOptionId || !drawingType) return;
+    if (!drawingType) return;
     setAddDrawingError(null);
     startTransition(async () => {
       const result = await addDrawing(projectId, {
-        project_option_id: activeOptionId,
         name: drawingName,
         drawing_type: drawingType as DrawingType,
       });
@@ -246,10 +222,6 @@ export default function ProjectDrawingsClient({
     });
   }
 
-  // ── Render ────────────────────────────────────────────────────────────────────
-
-  const activeOption = options.find((o) => o.id === activeOptionId);
-
   return (
     <div style={{ maxWidth: 900 }}>
 
@@ -263,113 +235,83 @@ export default function ProjectDrawingsClient({
             {projectName}
           </p>
         </div>
-        {activeOptionId && (
-          <button
-            type="button"
-            onClick={openAddDrawing}
-            disabled={isPending}
-            className="flex items-center gap-1.5 transition-opacity hover:opacity-80"
-            style={{ height: 36, paddingLeft: 14, paddingRight: 14, backgroundColor: "#FFDE28", borderRadius: 8, fontFamily: "var(--font-inter), sans-serif", fontSize: 13, fontWeight: 600, color: "#1A1A1A", border: "none", cursor: "pointer", flexShrink: 0 }}
-          >
-            <Plus size={14} />
-            Add drawing
-          </button>
-        )}
-      </div>
-
-      {/* ── Option tabs ────────────────────────────────────────────────────── */}
-      <div className="mb-6">
-        <OptionTabs
-          options={options}
-          activeId={activeOptionId}
-          onSelect={setActiveOptionId}
-          onAddOption={() => { setOptionName(""); setOptionError(null); setAddOptionOpen(true); }}
+        <button
+          type="button"
+          onClick={openAddDrawing}
           disabled={isPending}
-        />
-      </div>
-
-      {/* ── No options ─────────────────────────────────────────────────────── */}
-      {options.length === 0 && (
-        <div
-          className="flex flex-col items-center justify-center py-16 text-center"
-          style={{ borderRadius: 14, border: "1.5px dashed #E4E1DC", backgroundColor: "#FAFAF9" }}
+          className="flex items-center gap-1.5 transition-opacity hover:opacity-80"
+          style={{ height: 36, paddingLeft: 14, paddingRight: 14, backgroundColor: "#FFDE28", borderRadius: 8, fontFamily: "var(--font-inter), sans-serif", fontSize: 13, fontWeight: 600, color: "#1A1A1A", border: "none", cursor: "pointer", flexShrink: 0 }}
         >
-          <p style={{ fontFamily: "var(--font-playfair), serif", fontSize: 16, fontWeight: 600, color: "#1A1A1A", marginBottom: 6 }}>
-            No options yet
-          </p>
-          <p style={{ fontFamily: "var(--font-inter), sans-serif", fontSize: 13, color: "#9A9590", marginBottom: 16, maxWidth: 320, lineHeight: 1.6 }}>
-            Add a project option to start creating drawings. Options can be created on the Specs page too.
-          </p>
-        </div>
-      )}
+          <Plus size={14} />
+          Add drawing
+        </button>
+      </div>
 
       {/* ── Drawing sections ────────────────────────────────────────────────── */}
-      {activeOptionId && (
-        <div className="flex flex-col gap-8">
-          {DRAWING_TYPE_SECTIONS.map(({ type, label }) => {
-            const sectionDrawings = activeDrawings.filter((d) => d.drawing_type === type);
-            if (sectionDrawings.length === 0) return null;
-            return (
-              <DrawingSection
-                key={type}
-                label={label}
-                drawings={sectionDrawings}
-                drawingFinishes={drawingFinishes}
-                studioFinishes={studioFinishes}
-                pinnedSpecs={pinnedSpecs}
-                onSelect={setSelectedDrawingId}
-                onDelete={handleDeleteDrawing}
-                isPending={isPending}
-              />
-            );
-          })}
+      <div className="flex flex-col gap-8">
+        {DRAWING_TYPE_SECTIONS.map(({ type, label }) => {
+          const sectionDrawings = drawings.filter((d) => d.drawing_type === type);
+          if (sectionDrawings.length === 0) return null;
+          return (
+            <DrawingSection
+              key={type}
+              label={label}
+              drawings={sectionDrawings}
+              drawingFinishes={drawingFinishes}
+              studioFinishes={studioFinishes}
+              pinnedSpecs={pinnedSpecs}
+              onSelect={setSelectedDrawingId}
+              onDelete={handleDeleteDrawing}
+              isPending={isPending}
+            />
+          );
+        })}
 
-          {/* Drawings with null drawing_type */}
-          {(() => {
-            const others = activeDrawings.filter((d) => !d.drawing_type);
-            if (others.length === 0) return null;
-            return (
-              <DrawingSection
-                label="Other"
-                drawings={others}
-                drawingFinishes={drawingFinishes}
-                studioFinishes={studioFinishes}
-                pinnedSpecs={pinnedSpecs}
-                onSelect={setSelectedDrawingId}
-                onDelete={handleDeleteDrawing}
-                isPending={isPending}
-              />
-            );
-          })()}
+        {/* Drawings with null drawing_type */}
+        {(() => {
+          const others = drawings.filter((d) => !d.drawing_type);
+          if (others.length === 0) return null;
+          return (
+            <DrawingSection
+              label="Other"
+              drawings={others}
+              drawingFinishes={drawingFinishes}
+              studioFinishes={studioFinishes}
+              pinnedSpecs={pinnedSpecs}
+              onSelect={setSelectedDrawingId}
+              onDelete={handleDeleteDrawing}
+              isPending={isPending}
+            />
+          );
+        })()}
 
-          {/* Empty state */}
-          {activeDrawings.length === 0 && (
-            <div
-              className="flex flex-col items-center justify-center py-16 text-center"
-              style={{ borderRadius: 14, border: "1.5px dashed #E4E1DC", backgroundColor: "#FAFAF9" }}
-            >
-              <div className="flex items-center justify-center mb-4" style={{ width: 48, height: 48, backgroundColor: "#F0EEEB", borderRadius: 12 }}>
-                <ImageIcon size={20} style={{ color: "#9A9590" }} />
-              </div>
-              <p style={{ fontFamily: "var(--font-playfair), serif", fontSize: 16, fontWeight: 600, color: "#1A1A1A", marginBottom: 6 }}>
-                No drawings yet for Option {activeOption?.label}
-              </p>
-              <p style={{ fontFamily: "var(--font-inter), sans-serif", fontSize: 13, color: "#9A9590", marginBottom: 20, lineHeight: 1.6, maxWidth: 320 }}>
-                Add drawings like floor plans and elevations. Assign finish codes to each drawing and pin spec items to specific drawings.
-              </p>
-              <button
-                type="button"
-                onClick={openAddDrawing}
-                className="flex items-center gap-1.5 transition-opacity hover:opacity-80"
-                style={{ height: 36, paddingLeft: 14, paddingRight: 14, backgroundColor: "#FFDE28", borderRadius: 8, fontFamily: "var(--font-inter), sans-serif", fontSize: 13, fontWeight: 600, color: "#1A1A1A", border: "none", cursor: "pointer" }}
-              >
-                <Plus size={14} />
-                Add first drawing
-              </button>
+        {/* Empty state */}
+        {drawings.length === 0 && (
+          <div
+            className="flex flex-col items-center justify-center py-16 text-center"
+            style={{ borderRadius: 14, border: "1.5px dashed #E4E1DC", backgroundColor: "#FAFAF9" }}
+          >
+            <div className="flex items-center justify-center mb-4" style={{ width: 48, height: 48, backgroundColor: "#F0EEEB", borderRadius: 12 }}>
+              <ImageIcon size={20} style={{ color: "#9A9590" }} />
             </div>
-          )}
-        </div>
-      )}
+            <p style={{ fontFamily: "var(--font-playfair), serif", fontSize: 16, fontWeight: 600, color: "#1A1A1A", marginBottom: 6 }}>
+              No drawings yet
+            </p>
+            <p style={{ fontFamily: "var(--font-inter), sans-serif", fontSize: 13, color: "#9A9590", marginBottom: 20, lineHeight: 1.6, maxWidth: 320 }}>
+              Add drawings like floor plans and elevations. Assign finish codes to each drawing and pin spec items to specific drawings.
+            </p>
+            <button
+              type="button"
+              onClick={openAddDrawing}
+              className="flex items-center gap-1.5 transition-opacity hover:opacity-80"
+              style={{ height: 36, paddingLeft: 14, paddingRight: 14, backgroundColor: "#FFDE28", borderRadius: 8, fontFamily: "var(--font-inter), sans-serif", fontSize: 13, fontWeight: 600, color: "#1A1A1A", border: "none", cursor: "pointer" }}
+            >
+              <Plus size={14} />
+              Add first drawing
+            </button>
+          </div>
+        )}
+      </div>
 
       {/* ── Drawing detail Sheet ───────────────────────────────────────────── */}
       <Sheet
@@ -499,7 +441,7 @@ export default function ProjectDrawingsClient({
                           style={{ padding: "8px 10px", backgroundColor: "#FAFAF9", borderRadius: 8, border: "1px solid #F0EEEB" }}
                         >
                           <p style={{ fontFamily: "var(--font-inter), sans-serif", fontSize: 13, fontWeight: 500, color: "#1A1A1A", marginBottom: 2 }}>
-                            {specNameMap.get(ps.spec_id) ?? "Unknown spec"}
+                            {ps.spec_id ? (specNameMap.get(ps.spec_id) ?? "Unknown spec") : "Empty slot"}
                           </p>
                           {ps.item_type && (
                             <span style={{ fontFamily: "var(--font-inter), sans-serif", fontSize: 11, color: "#9A9590", backgroundColor: "#F0EEEB", borderRadius: 20, padding: "1px 6px" }}>
@@ -592,71 +534,6 @@ export default function ProjectDrawingsClient({
         </DialogContent>
       </Dialog>
 
-      {/* ── Add Option Dialog ──────────────────────────────────────────────── */}
-      <Dialog open={addOptionOpen} onOpenChange={(open) => { if (!open) { setAddOptionOpen(false); setOptionName(""); setOptionError(null); } }}>
-        <DialogContent style={{ maxWidth: 380 }}>
-          <DialogHeader>
-            <DialogTitle style={{ fontFamily: "var(--font-playfair), serif", fontSize: 20 }}>
-              Add option
-            </DialogTitle>
-          </DialogHeader>
-          <form
-            onSubmit={(e) => {
-              e.preventDefault();
-              setOptionError(null);
-              startTransition(async () => {
-                const result = await addProjectOption(projectId, optionName);
-                if (result.error) {
-                  setOptionError(result.error);
-                } else {
-                  setAddOptionOpen(false);
-                  setOptionName("");
-                  if (result.optionId) setActiveOptionId(result.optionId);
-                }
-              });
-            }}
-            className="flex flex-col gap-4 mt-2"
-          >
-            <div>
-              <label style={labelStyle}>Option name <span style={{ color: "#DC2626" }}>*</span></label>
-              <input
-                autoFocus
-                value={optionName}
-                onChange={(e) => setOptionName(e.target.value)}
-                placeholder="e.g. Option B"
-                required
-                style={inputStyle}
-              />
-              <p style={{ fontFamily: "var(--font-inter), sans-serif", fontSize: 12, color: "#9A9590", marginTop: 6 }}>
-                The option label (A, B, C…) is assigned automatically.
-              </p>
-            </div>
-            {optionError && (
-              <p style={{ fontFamily: "var(--font-inter), sans-serif", fontSize: 13, color: "#DC2626" }}>
-                {optionError}
-              </p>
-            )}
-            <div className="flex items-center justify-end gap-3">
-              <button
-                type="button"
-                onClick={() => { setAddOptionOpen(false); setOptionName(""); setOptionError(null); }}
-                style={{ height: 36, paddingLeft: 14, paddingRight: 14, backgroundColor: "transparent", border: "1.5px solid #E4E1DC", borderRadius: 8, fontFamily: "var(--font-inter), sans-serif", fontSize: 13, fontWeight: 500, color: "#9A9590", cursor: "pointer" }}
-              >
-                Cancel
-              </button>
-              <button
-                type="submit"
-                disabled={isPending}
-                className="flex items-center gap-2 transition-opacity hover:opacity-80"
-                style={{ height: 36, paddingLeft: 16, paddingRight: 16, backgroundColor: "#FFDE28", border: "none", borderRadius: 8, fontFamily: "var(--font-inter), sans-serif", fontSize: 13, fontWeight: 600, color: "#1A1A1A", cursor: "pointer" }}
-              >
-                {isPending && <Loader2 size={13} className="animate-spin" />}
-                Add option
-              </button>
-            </div>
-          </form>
-        </DialogContent>
-      </Dialog>
     </div>
   );
 }
