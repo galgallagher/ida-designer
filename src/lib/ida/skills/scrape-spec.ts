@@ -174,8 +174,6 @@ function extractCandidateImagesFromHtml(
 function extractCandidateImagesFromMarkdown(
   markdown: string
 ): { url: string; alt: string }[] {
-  const candidates: { url: string; alt: string; score: number }[] = [];
-
   const ogImages = [...markdown.matchAll(/og:image.*?(https?:\/\/[^\s"'<>)]+)/gi)].map(
     ([, url]) => ({ url: url.trim(), alt: "og:image", score: 10 })
   );
@@ -716,7 +714,7 @@ export const scrapeSpecTool = (categoryNames: string[]) =>
 
       // ── Resolve category_id, field_values, supplier_id server-side ───
       let category_id: string | null = null;
-      let field_values: { field_id: string; label: string; value: string }[] = [];
+      const field_values: { field_id: string; label: string; value: string }[] = [];
       let supplier_id: string | null = null;
 
       try {

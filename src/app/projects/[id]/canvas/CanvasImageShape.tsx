@@ -336,7 +336,7 @@ export class CanvasImageShapeUtil extends BaseBoxShapeUtil<CanvasImageShape> {
   override canEdit = () => true; // double-click → reposition image inside the frame
 
   component(shape: CanvasImageShape) {
-    const { w, h, imageUrl, imageId, tag } = shape.props;
+    const { w, h, imageId, tag } = shape.props;
     const flipX = shape.props.flipX ?? false;
     const flipY = shape.props.flipY ?? false;
     const cornerRadius = shape.props.cornerRadius ?? 0;

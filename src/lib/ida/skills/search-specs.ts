@@ -198,7 +198,7 @@ export const searchSpecsTool = () =>
 
       // ── 4. Field values for width / Martindale filtering ───────────────
       type FieldValueEntry = { fieldName: string; value: string };
-      let fieldValuesBySpec = new Map<string, FieldValueEntry[]>();
+      const fieldValuesBySpec = new Map<string, FieldValueEntry[]>();
 
       const needsFieldSearch =
         params.width_min_cm != null ||

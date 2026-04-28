@@ -37,5 +37,4 @@ export const {
   useMutation,
   useMyPresence,
   useOthers,
-  useSelf,
 } = createRoomContext<Presence, Storage>(client);
