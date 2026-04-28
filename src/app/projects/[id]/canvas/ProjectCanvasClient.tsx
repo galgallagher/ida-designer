@@ -37,6 +37,7 @@ import { createShapeId } from "tldraw";
 import SpecDetailModal from "@/app/specs/SpecDetailModal";
 import LibraryPickerModal from "./LibraryPickerModal";
 import { addSpecToProject } from "../options/actions";
+import { RoomProvider, LiveMap, type JsonObject } from "@/lib/liveblocks";
 
 // Lazy-load tldraw to keep bundle size down on other pages
 const TldrawCanvas = dynamic(() => import("./TldrawCanvas"), {
@@ -1062,14 +1063,20 @@ export default function ProjectCanvasClient({ projectId, studioId, canvases: ini
             <Loader2 size={24} className="animate-spin" style={{ color: "#9A9590" }} />
           </div>
         ) : (
-          <TldrawCanvas
+          <RoomProvider
             key={activeCanvasId}
-            initialContent={canvasContent}
-            onSave={handleSave}
-            onImageUpload={handleImageUpload}
-            onEditorMount={handleEditorMount}
-            onUploadError={handleUploadError}
-          />
+            id={`canvas-${studioId}-${activeCanvasId}`}
+            initialPresence={{ cursor: null, name: "", color: "" }}
+            initialStorage={{ records: new LiveMap<string, JsonObject>() }}
+          >
+            <TldrawCanvas
+              initialContent={canvasContent}
+              onSave={handleSave}
+              onImageUpload={handleImageUpload}
+              onEditorMount={handleEditorMount}
+              onUploadError={handleUploadError}
+            />
+          </RoomProvider>
         )}
       </div>
 

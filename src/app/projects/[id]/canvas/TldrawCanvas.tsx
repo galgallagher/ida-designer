@@ -1,20 +1,34 @@
 "use client";
 
 /**
- * TldrawCanvas — wrapper around tldraw v4 that handles:
- * - Loading/restoring a snapshot from the database
- * - Debounced auto-save on every change
- * - Image upload to Supabase Storage on drop/paste (→ canvas-image shape)
- * - Stripped-down UI (no page menu, no share, no debug, no help)
+ * TldrawCanvas — tldraw v4 with Liveblocks real-time sync.
+ *
+ * - Liveblocks Storage (LiveMap<id, TLRecord>) is the live source of truth.
+ * - On first open of a canvas, seeds the Liveblocks room from the existing
+ *   Supabase snapshot (passed as initialContent) so no data is lost.
+ * - Keeps a debounced backup save to Supabase for disaster recovery.
+ * - Shows other users' cursors as coloured overlays on the canvas.
+ *
+ * Must be mounted inside a Liveblocks <RoomProvider> — see ProjectCanvasClient.
  */
 
-import { useCallback, useRef, useEffect, useMemo } from "react";
-import { Tldraw, getSnapshot, createShapeId, Editor, type TLComponents } from "tldraw";
+import { useCallback, useRef, useEffect, useMemo, useState } from "react";
+import {
+  Tldraw,
+  getSnapshot,
+  createShapeId,
+  createTLStore,
+  defaultShapeUtils,
+  type Editor,
+  type TLComponents,
+  type TLStoreWithStatus,
+  type TLRecord,
+} from "tldraw";
 import "tldraw/tldraw.css";
-import type { TLAssetStore } from "@tldraw/tlschema";
 import type { Json } from "@/types/database";
 import { SpecCardShapeUtil } from "./SpecCardShape";
 import { CanvasImageShapeUtil } from "./CanvasImageShape";
+import { useStorage, useMutation, useMyPresence, useOthers, type JsonObject } from "@/lib/liveblocks";
 
 const CUSTOM_SHAPE_UTILS = [SpecCardShapeUtil, CanvasImageShapeUtil];
 
@@ -35,17 +49,153 @@ const COMPONENTS: TLComponents = {
   SharePanel: null,
 };
 
-export default function TldrawCanvas({ initialContent, onSave, onImageUpload, onEditorMount, onUploadError }: Props) {
+// ── Other users' cursors overlay ─────────────────────────────────────────────
+
+function CursorsOverlay({ editor }: { editor: Editor }) {
+  const others = useOthers();
+  // Re-render every animation frame so cursor positions stay accurate as the
+  // camera pans or zooms (page → screen conversion changes with camera).
+  const [, forceUpdate] = useState(0);
+  useEffect(() => {
+    let rafId: number;
+    const tick = () => { forceUpdate((n) => n + 1); rafId = requestAnimationFrame(tick); };
+    rafId = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(rafId);
+  }, []);
+
+  return (
+    <div style={{ position: "absolute", inset: 0, pointerEvents: "none", overflow: "hidden", zIndex: 10 }}>
+      {others.map(({ connectionId, presence, info }) => {
+        if (!presence.cursor) return null;
+        const screen = editor.pageToScreen(presence.cursor);
+        const color = (info as { color?: string } | null)?.color ?? "#9A9590";
+        const name = (info as { name?: string } | null)?.name ?? "User";
+        return (
+          <div
+            key={connectionId}
+            style={{
+              position: "absolute",
+              left: screen.x,
+              top: screen.y,
+              transform: "translate(-2px, -2px)",
+              pointerEvents: "none",
+            }}
+          >
+            <svg width="18" height="18" viewBox="0 0 18 18" fill="none">
+              <path
+                d="M1 1L1 14L4.5 10.5L7.5 17L9.5 16L6.5 9.5L12 9.5Z"
+                fill={color}
+                stroke="#FFFFFF"
+                strokeWidth="0.8"
+              />
+            </svg>
+            <div
+              style={{
+                position: "absolute",
+                top: 16,
+                left: 10,
+                backgroundColor: color,
+                color: "#FFFFFF",
+                fontSize: 10,
+                fontWeight: 600,
+                padding: "2px 6px",
+                borderRadius: 4,
+                whiteSpace: "nowrap",
+                fontFamily: "var(--font-inter), sans-serif",
+                boxShadow: "0 1px 4px rgba(26,26,26,0.2)",
+              }}
+            >
+              {name}
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+// ── Main component ────────────────────────────────────────────────────────────
+
+export default function TldrawCanvas({
+  initialContent,
+  onSave,
+  onImageUpload,
+  onEditorMount,
+  onUploadError,
+}: Props) {
+  // tldraw store — manually managed so Liveblocks can drive it
+  const store = useMemo(
+    () => createTLStore({ shapeUtils: [...defaultShapeUtils, ...CUSTOM_SHAPE_UTILS] }),
+    [],
+  );
+  const [storeWithStatus, setStoreWithStatus] = useState<TLStoreWithStatus>({ status: "loading" });
+  const [editorState, setEditorState] = useState<Editor | null>(null);
+
   const editorRef = useRef<Editor | null>(null);
   const saveTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const isSavingRef = useRef(false);
+  // Tracks whether we've already seeded the room from Supabase so we don't
+  // re-seed on subsequent Liveblocks storage updates.
+  const hasSeededRef = useRef(false);
 
-  // Keep a stable ref to onImageUpload so the files handler closure doesn't stale
+  // Keep stable refs to callbacks so closures don't go stale
   const onImageUploadRef = useRef(onImageUpload);
   useEffect(() => { onImageUploadRef.current = onImageUpload; }, [onImageUpload]);
-
   const onUploadErrorRef = useRef(onUploadError);
   useEffect(() => { onUploadErrorRef.current = onUploadError; }, [onUploadError]);
+
+  // ── Liveblocks hooks ────────────────────────────────────────────────────────
+
+  // All tldraw records from Liveblocks Storage. Null while the room is loading.
+  // Cast needed because useStorage infers ReadonlyJsonObject but we need map methods.
+  const records = useStorage((root) => root.records) as unknown as ReadonlyMap<string, Record<string, unknown>> | null;
+
+  // Seed the Liveblocks room from a Supabase snapshot (first open only).
+  const seedRoom = useMutation(
+    ({ storage }, initialRecords: Record<string, TLRecord>) => {
+      const lbRecords = storage.get("records");
+      for (const [id, record] of Object.entries(initialRecords)) {
+        lbRecords.set(id, record as unknown as JsonObject);
+      }
+    },
+    [],
+  );
+
+  // Push local tldraw changes to Liveblocks Storage.
+  const pushChanges = useMutation(
+    (
+      { storage },
+      changes: {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        added: Record<string, any>;
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        updated: Record<string, [any, any]>;
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        removed: Record<string, any>;
+      },
+    ) => {
+      const lbRecords = storage.get("records");
+      for (const record of Object.values(changes.added)) {
+        lbRecords.set((record as TLRecord).id, record as unknown as JsonObject);
+      }
+      for (const update of Object.values(changes.updated)) {
+        const after = (update as [TLRecord, TLRecord])[1];
+        lbRecords.set(after.id, after as unknown as JsonObject);
+      }
+      for (const id of Object.keys(changes.removed)) {
+        lbRecords.delete(id);
+      }
+    },
+    [],
+  );
+
+  const [, updateMyPresence] = useMyPresence();
+  const updatePresenceRef = useRef(updateMyPresence);
+  useEffect(() => { updatePresenceRef.current = updateMyPresence; }, [updateMyPresence]);
+
+  // ── Debounced Supabase backup save ─────────────────────────────────────────
+  // Liveblocks is the live source of truth; Supabase is disaster recovery.
+  // We save less aggressively (5s debounce, only on local user changes).
 
   const debouncedSave = useCallback(() => {
     if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
@@ -57,49 +207,99 @@ export default function TldrawCanvas({ initialContent, onSave, onImageUpload, on
         const snapshot = getSnapshot(editor.store);
         await onSave(snapshot as unknown as Json);
       } catch (err) {
-        console.error("[TldrawCanvas] auto-save failed:", err);
+        console.error("[TldrawCanvas] backup save failed:", err);
       } finally {
         isSavingRef.current = false;
       }
-    }, 1500);
+    }, 5000);
   }, [onSave]);
 
   useEffect(() => {
     return () => { if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current); };
   }, []);
 
-  // Asset store — only needed for resolving existing native image assets that
-  // may already exist in older snapshots. New uploads go through the files handler.
-  const assetStore: TLAssetStore = useMemo(() => ({
-    async upload(_asset, _file) {
-      // Uploads are now handled by the "files" external content handler below.
-      // This path should not be reached for new images.
-      throw new Error("Unexpected asset upload — use files handler");
-    },
-    resolve(asset) {
-      return asset.props.src ?? "";
-    },
-  }), []);
+  // ── Sync Liveblocks → tldraw store ─────────────────────────────────────────
 
-  const hasContent =
-    initialContent &&
-    typeof initialContent === "object" &&
-    !Array.isArray(initialContent) &&
-    ("document" in initialContent || "store" in initialContent) &&
-    Object.keys(initialContent).length > 0;
+  useEffect(() => {
+    if (records === null) {
+      // Room still connecting
+      setStoreWithStatus({ status: "loading" });
+      return;
+    }
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const snapshot = hasContent ? (initialContent as any) : undefined;
+    if (records.size === 0 && !hasSeededRef.current) {
+      // New room — seed from Supabase snapshot if we have one
+      hasSeededRef.current = true;
+      const snap = initialContent as {
+        document?: { store?: Record<string, TLRecord> };
+      } | null;
+      const initialRecords = snap?.document?.store;
+      if (initialRecords && Object.keys(initialRecords).length > 0) {
+        seedRoom(initialRecords);
+        return; // useEffect will re-fire after seeding populates records
+      }
+    }
+
+    // Apply all Liveblocks records to the tldraw store
+    store.mergeRemoteChanges(() => {
+      const remoteIds = new Set(records.keys());
+      const localIds = store.allRecords().map((r) => r.id);
+
+      // Remove local records that no longer exist in Liveblocks
+      const toRemove = localIds.filter((id) => !remoteIds.has(id));
+      if (toRemove.length > 0) {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        store.remove(toRemove as any);
+      }
+
+      // Upsert all remote records (cast from JsonObject back to TLRecord)
+      const toUpsert = [...records.values()] as unknown as TLRecord[];
+      if (toUpsert.length > 0) {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        store.put(toUpsert as any);
+      }
+    });
+
+    setStoreWithStatus({
+      status: "synced-remote",
+      connectionStatus: "online",
+      store,
+    });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [records]);
+
+  // ── Sync tldraw store → Liveblocks ─────────────────────────────────────────
+  // Only push changes made by this user (source: "user"). Changes from
+  // mergeRemoteChanges have source: "remote" and are intentionally excluded
+  // to prevent feedback loops.
+
+  useEffect(() => {
+    const unsub = store.listen(
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (changes: any) => {
+        pushChanges({
+          added: changes.added ?? {},
+          updated: changes.updated ?? {},
+          removed: changes.removed ?? {},
+        });
+        debouncedSave();
+      },
+      { scope: "document", source: "user" },
+    );
+    return unsub;
+  }, [store, pushChanges, debouncedSave]);
+
+  // ── Render ──────────────────────────────────────────────────────────────────
 
   return (
     <div className="ida-canvas-tldraw" style={{ position: "absolute", inset: 0 }}>
       <Tldraw
-        snapshot={snapshot}
-        assets={assetStore}
+        store={storeWithStatus}
         shapeUtils={CUSTOM_SHAPE_UTILS}
         components={COMPONENTS}
         onMount={(editor: Editor) => {
           editorRef.current = editor;
+          setEditorState(editor);
           onEditorMount?.(editor);
 
           editor.user.updateUserPreferences({ isSnapMode: true });
@@ -108,9 +308,19 @@ export default function TldrawCanvas({ initialContent, onSave, onImageUpload, on
           editor.registerExternalContentHandler("url", () => {});
           editor.registerExternalContentHandler("embed", () => {});
 
+          // Track cursor position and broadcast to other users.
+          const container = editor.getContainer();
+          const handlePointerMove = (e: PointerEvent) => {
+            const { x, y } = editor.screenToPage({ x: e.clientX, y: e.clientY });
+            updatePresenceRef.current({ cursor: { x, y } });
+          };
+          const handlePointerLeave = () => {
+            updatePresenceRef.current({ cursor: null });
+          };
+          container.addEventListener("pointermove", handlePointerMove);
+          container.addEventListener("pointerleave", handlePointerLeave);
+
           // Intercept all file drops and clipboard image pastes.
-          // Creates canvas-image shapes instead of tldraw's native image shapes,
-          // so our eye/tag button overlay is always present.
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
           editor.registerExternalContentHandler("files", async (content: any) => {
             const files: File[] = (content.files ?? []).filter(
@@ -129,14 +339,14 @@ export default function TldrawCanvas({ initialContent, onSave, onImageUpload, on
               const result = await onImageUploadRef.current(file);
 
               if (!result) {
-                const msg = file.size > 50 * 1024 * 1024
-                  ? "Image too large — must be under 50 MB."
-                  : "Image upload failed. Check your connection and try again.";
+                const msg =
+                  file.size > 50 * 1024 * 1024
+                    ? "Image too large — must be under 50 MB."
+                    : "Image upload failed. Check your connection and try again.";
                 onUploadErrorRef.current?.(msg);
                 continue;
               }
 
-              // Get natural image dimensions to size the shape correctly.
               const dims = await new Promise<{ w: number; h: number }>((resolve) => {
                 const img = new Image();
                 img.onload = () => resolve({ w: img.naturalWidth, h: img.naturalHeight });
@@ -144,36 +354,26 @@ export default function TldrawCanvas({ initialContent, onSave, onImageUpload, on
                 img.src = result.url;
               });
 
-              // Scale down to fit within 800px wide, preserve aspect ratio.
               const MAX_W = 800;
               const scale = dims.w > MAX_W ? MAX_W / dims.w : 1;
               const w = Math.round(dims.w * scale);
               const h = Math.round(dims.h * scale);
-
-              // Stagger multiple files so they don't stack exactly.
               const offset = i * 24;
+
               editor.createShape({
                 id: createShapeId(),
                 type: "canvas-image",
                 x: viewportCenter.x - w / 2 + offset,
                 y: viewportCenter.y - h / 2 + offset,
-                props: {
-                  w,
-                  h,
-                  imageUrl: result.url,
-                  imageId: result.imageId ?? "",
-                  tag: undefined,
-                },
+                props: { w, h, imageUrl: result.url, imageId: result.imageId ?? "", tag: undefined },
               });
             }
           });
-
-          editor.store.listen(
-            () => { debouncedSave(); },
-            { scope: "document", source: "user" },
-          );
         }}
       />
+
+      {/* Render other users' cursors on top of the canvas */}
+      {editorState && <CursorsOverlay editor={editorState} />}
     </div>
   );
 }
