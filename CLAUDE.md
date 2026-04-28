@@ -39,6 +39,7 @@ Always resolve via `getCurrentStudioId()` in `src/lib/studio-context.ts` — rea
 ### Secrets — server only
 - `ANTHROPIC_API_KEY` — never `NEXT_PUBLIC_`, never client-side
 - `SUPABASE_SERVICE_ROLE_KEY` — server-only
+- `LIVEBLOCKS_SECRET_KEY` — server-only; browser fetches short-lived tokens from `/api/liveblocks-auth`
 - All AI calls go through `/api/ida/` routes, never directly from the browser
 
 ### Modal / panel patterns
@@ -65,6 +66,12 @@ Shadow:        0 2px 12px rgba(26,26,26,0.08)
 Project Options (`/projects/[id]/options`) uses `project_options` table — one spec per project, unique constraint. Sub-navigation lives inside `ProjectNav` as inline items (not a separate sidebar panel). See ADR 023.
 
 Canvas images (`CanvasImageShape`) and spec cards (`SpecCardShape`) are distinct custom tldraw shapes — do not conflate them. See ADR 018.
+
+### Canvas multiplayer (Liveblocks)
+The canvas is real-time multiplayer via Liveblocks. Liveblocks holds the live `LiveMap<string, JsonObject>` of tldraw records; Supabase keeps a debounced JSONB snapshot as cold backup. Studio isolation is enforced in `/api/liveblocks-auth` — rooms are named `canvas-{studioId}-{canvasId}` and the auth route refuses to mint a token unless the prefix matches the requester's studio. Only document-scope records sync; session records (instance, camera, pointer) stay local per client. See ADR 025.
+
+### Canvas image style controls
+Flip, rotate, corner radius, and make-square live in a shared `ImageStyleBar` floating above selected image shapes. The bar is identical for `CanvasImageShape` and `SpecCardShape` — don't duplicate the controls. Corner radius is a slider (0 → `min(w,h)/2`), default 0. See ADR 026.
 
 ## What NOT to do without planning first
 
