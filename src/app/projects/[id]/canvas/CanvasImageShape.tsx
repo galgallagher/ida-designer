@@ -14,6 +14,9 @@ import {
   BaseBoxShapeUtil,
   HTMLContainer,
   T,
+  useEditor,
+  useValue,
+  type Editor,
   type RecordProps,
   type TLBaseShape,
 } from "tldraw";
@@ -28,11 +31,15 @@ type CanvasImageShapeProps = {
   imageUrl: string;
   imageId: string;   // project_images DB record ID (empty string if not yet persisted)
   tag?: CanvasImageTag;
+  // Image positioning within the cropped frame (0–1, default 0.5/0.5 = centered).
+  // Editable via double-click. See SpecCardShape for the same pattern.
+  imageOffsetX?: number;
+  imageOffsetY?: number;
 };
 
 const TAG_CONFIG: Record<CanvasImageTag, { label: string; bg: string; color: string }> = {
-  inspiration: { label: "Inspiration", bg: "rgba(255,222,40,0.92)", color: "#1A1A1A" },
-  sketch:      { label: "Sketch",      bg: "rgba(26,26,26,0.78)",  color: "#FFFFFF"  },
+  inspiration: { label: "Inspiration", bg: "rgba(255,255,255,0.95)", color: "#1A1A1A" },
+  sketch:      { label: "Sketch",      bg: "rgba(255,255,255,0.95)", color: "#1A1A1A" },
 };
 
 function cardButtonStyle(active: boolean): React.CSSProperties {
@@ -82,11 +89,9 @@ function TagButton({
         onPointerUp={(e) => e.stopPropagation()}
         onClick={(e) => { e.stopPropagation(); setOpen((v) => !v); }}
         style={{
-          ...cardButtonStyle(!!tag),
-          backgroundColor: tag
-            ? tag === "inspiration" ? "#FFDE28" : "rgba(26,26,26,0.85)"
-            : "rgba(255,255,255,0.95)",
-          color: tag === "sketch" ? "#FFFFFF" : "#1A1A1A",
+          ...cardButtonStyle(false),
+          backgroundColor: "rgba(255,255,255,0.95)",
+          color: "#1A1A1A",
         }}
       >
         {tag ? (
@@ -181,6 +186,110 @@ function TagButton({
   );
 }
 
+// ── Image body with drag-to-reposition (in edit mode) ────────────────────────
+
+function CanvasImageBody({
+  shape,
+  editor,
+  isEditing,
+}: {
+  shape: CanvasImageShape;
+  editor: Editor | null;
+  isEditing: boolean;
+}): React.ReactElement {
+  const { w, h, imageUrl } = shape.props;
+  const offsetX = shape.props.imageOffsetX ?? 0.5;
+  const offsetY = shape.props.imageOffsetY ?? 0.5;
+
+  const imgRef = useRef<HTMLImageElement | null>(null);
+  const [liveOffset, setLiveOffset] = useState<{ x: number; y: number } | null>(null);
+  const displayX = liveOffset?.x ?? offsetX;
+  const displayY = liveOffset?.y ?? offsetY;
+
+  function startReposition(e: React.PointerEvent<HTMLDivElement>) {
+    if (!isEditing || !editor) return;
+    e.stopPropagation();
+    e.preventDefault();
+    const target = e.currentTarget;
+    target.setPointerCapture(e.pointerId);
+
+    const img = imgRef.current;
+    if (!img || !img.naturalWidth || !img.naturalHeight) return;
+
+    const scale = Math.max(w / img.naturalWidth, h / img.naturalHeight);
+    const renderedW = img.naturalWidth * scale;
+    const renderedH = img.naturalHeight * scale;
+    const overflowX = Math.max(0, renderedW - w);
+    const overflowY = Math.max(0, renderedH - h);
+
+    const startPointerX = e.clientX;
+    const startPointerY = e.clientY;
+    const startX = offsetX;
+    const startY = offsetY;
+
+    const clamp01 = (v: number) => Math.min(1, Math.max(0, v));
+
+    function onMove(ev: PointerEvent) {
+      const dx = ev.clientX - startPointerX;
+      const dy = ev.clientY - startPointerY;
+      const nextX = overflowX > 0 ? clamp01(startX - dx / overflowX) : startX;
+      const nextY = overflowY > 0 ? clamp01(startY - dy / overflowY) : startY;
+      setLiveOffset({ x: nextX, y: nextY });
+    }
+
+    function onUp(ev: PointerEvent) {
+      target.releasePointerCapture(ev.pointerId);
+      target.removeEventListener("pointermove", onMove);
+      target.removeEventListener("pointerup", onUp);
+      target.removeEventListener("pointercancel", onUp);
+      const dx = ev.clientX - startPointerX;
+      const dy = ev.clientY - startPointerY;
+      const nextX = overflowX > 0 ? clamp01(startX - dx / overflowX) : startX;
+      const nextY = overflowY > 0 ? clamp01(startY - dy / overflowY) : startY;
+      editor!.markHistoryStoppingPoint("reposition image");
+      editor!.updateShape<CanvasImageShape>({
+        id: shape.id,
+        type: "canvas-image",
+        props: { imageOffsetX: nextX, imageOffsetY: nextY },
+      });
+      setLiveOffset(null);
+    }
+
+    target.addEventListener("pointermove", onMove);
+    target.addEventListener("pointerup", onUp);
+    target.addEventListener("pointercancel", onUp);
+  }
+
+  return (
+    <div
+      onPointerDown={startReposition}
+      style={{
+        position: "absolute",
+        inset: 0,
+        cursor: isEditing ? (liveOffset ? "grabbing" : "grab") : "default",
+        boxShadow: isEditing ? "inset 0 0 0 2px #FFDE28" : undefined,
+      }}
+    >
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img
+        ref={imgRef}
+        src={imageUrl}
+        alt=""
+        draggable={false}
+        style={{
+          width: "100%",
+          height: "100%",
+          objectFit: "cover",
+          objectPosition: `${displayX * 100}% ${displayY * 100}%`,
+          display: "block",
+          userSelect: "none",
+          pointerEvents: "none",
+        }}
+      />
+    </div>
+  );
+}
+
 // ── Shape declaration ─────────────────────────────────────────────────────────
 
 declare module "tldraw" {
@@ -199,19 +308,32 @@ export class CanvasImageShapeUtil extends BaseBoxShapeUtil<CanvasImageShape> {
     imageUrl: T.string,
     imageId: T.string,
     tag: T.string.optional() as T.Validatable<CanvasImageTag | undefined>,
+    imageOffsetX: T.number.optional(),
+    imageOffsetY: T.number.optional(),
   };
 
   getDefaultProps(): CanvasImageShape["props"] {
-    return { w: 400, h: 300, imageUrl: "", imageId: "", tag: undefined };
+    return {
+      w: 400, h: 300, imageUrl: "", imageId: "", tag: undefined,
+      imageOffsetX: 0.5, imageOffsetY: 0.5,
+    };
   }
 
   override canResize = () => true;
-  override canEdit = () => false;
+  override canEdit = () => true; // double-click → reposition image inside the frame
   override hideRotateHandle = () => true;
 
   component(shape: CanvasImageShape) {
     const { w, h, imageUrl, imageId, tag } = shape.props;
     const editor = this.editor;
+    // eslint-disable-next-line react-hooks/rules-of-hooks
+    const editorFromHook = useEditor();
+    // eslint-disable-next-line react-hooks/rules-of-hooks
+    const isEditing = useValue(
+      "isEditingCanvasImage",
+      () => editorFromHook.getEditingShapeId() === shape.id,
+      [editorFromHook, shape.id],
+    );
 
     const setTag = (t: CanvasImageTag | undefined) => {
       editor.updateShape<CanvasImageShape>({
@@ -239,32 +361,45 @@ export class CanvasImageShapeUtil extends BaseBoxShapeUtil<CanvasImageShape> {
           position: "relative",
         }}
       >
-        {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img
-          src={imageUrl}
-          alt=""
-          draggable={false}
-          style={{
-            width: "100%",
-            height: "100%",
-            objectFit: "cover",
-            display: "block",
-            userSelect: "none",
-            pointerEvents: "none",
-          }}
-        />
+        <CanvasImageBody shape={shape} editor={editorFromHook} isEditing={isEditing} />
+
+        {/* Edit-mode hint */}
+        {isEditing && (
+          <div
+            className="canvas-card-buttons"
+            style={{
+              position: "absolute",
+              top: 8,
+              left: 8,
+              padding: "3px 9px",
+              borderRadius: 20,
+              backgroundColor: "rgba(26,26,26,0.78)",
+              color: "#FFFFFF",
+              fontSize: 9,
+              fontWeight: 700,
+              letterSpacing: "0.07em",
+              textTransform: "uppercase",
+              pointerEvents: "none",
+              boxShadow: "0 1px 4px rgba(26,26,26,0.2)",
+            }}
+          >
+            Drag image · Esc to finish
+          </div>
+        )}
 
         {/* Tag pill — subtle label at bottom-left when tagged */}
         {tag && (
           <div
+            className="canvas-card-buttons"
             style={{
               position: "absolute",
               bottom: 8,
               left: 8,
-              padding: "2px 8px",
+              padding: "3px 9px",
               borderRadius: 20,
               backgroundColor: TAG_CONFIG[tag].bg,
               color: TAG_CONFIG[tag].color,
+              boxShadow: "0 1px 4px rgba(26,26,26,0.15)",
               fontSize: 9,
               fontWeight: 700,
               letterSpacing: "0.07em",
@@ -277,7 +412,7 @@ export class CanvasImageShapeUtil extends BaseBoxShapeUtil<CanvasImageShape> {
         )}
 
         {/* Eye button — top-right */}
-        <div style={{ position: "absolute", top: 8, right: 8 }}>
+        <div className="canvas-card-buttons" style={{ position: "absolute", top: 8, right: 8 }}>
           <TagButton tag={tag} onSetTag={setTag} />
         </div>
       </HTMLContainer>
@@ -304,6 +439,8 @@ export class CanvasImageShapeUtil extends BaseBoxShapeUtil<CanvasImageShape> {
     }
 
     const src = embeddedSrc ?? imageUrl;
+    const ox = (shape.props.imageOffsetX ?? 0.5) * 100;
+    const oy = (shape.props.imageOffsetY ?? 0.5) * 100;
     return (
       <foreignObject x={0} y={0} width={w} height={h}>
         <div
@@ -311,7 +448,7 @@ export class CanvasImageShapeUtil extends BaseBoxShapeUtil<CanvasImageShape> {
           style={{ width: w, height: h, overflow: "hidden", borderRadius: 10 }}
         >
           {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src={src} alt="" style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
+          <img src={src} alt="" style={{ width: "100%", height: "100%", objectFit: "cover", objectPosition: `${ox}% ${oy}%`, display: "block" }} />
         </div>
       </foreignObject>
     );

@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useTransition, useMemo } from "react";
-import { Plus, Package, X, Search, Trash2, ImageIcon } from "lucide-react";
+import { Plus, Package, X, Search, Trash2, ImageIcon, ClipboardList, ListPlus } from "lucide-react";
 import Image from "next/image";
 import {
   Dialog,
@@ -20,6 +20,7 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { addSpecToProject, removeSpecFromProject } from "./actions";
+import { addSpecToSchedule, assignSpecToCode } from "../specifications/actions";
 import { tagProjectImage, deleteProjectImage } from "../canvas/actions";
 import SpecDetailModal from "@/app/specs/SpecDetailModal";
 import type { ProjectImageRow, ProjectImageType } from "@/types/database";
@@ -31,11 +32,15 @@ type SpecDetail = {
   name: string;
   code: string | null;
   image_url: string | null;
+  category_id: string | null;
   category_name: string | null;
   cost_from: number | null;
   cost_to: number | null;
   cost_unit: string | null;
 };
+
+type EmptySlot = { id: string; code: string; category_id: string };
+type CategoryNode = { id: string; name: string; parent_id: string | null };
 
 type ProjectOptionRow = {
   id: string;
@@ -53,6 +58,9 @@ interface Props {
   alreadyAddedIds: string[];
   images: ProjectImageRow[];
   section: string | null;
+  scheduleCodesBySpec: Record<string, string[]>;
+  emptySlots: EmptySlot[];
+  categories: CategoryNode[];
 }
 
 type ActiveSection =
@@ -78,6 +86,9 @@ export default function ProjectOptionsClient({
   alreadyAddedIds,
   images: initialImages,
   section,
+  scheduleCodesBySpec,
+  emptySlots: initialEmptySlots,
+  categories,
 }: Props) {
   const [openSpecId, setOpenSpecId]           = useState<string | null>(null);
   const [dialogOpen, setDialogOpen]           = useState(false);
@@ -86,6 +97,30 @@ export default function ProjectOptionsClient({
   const [isPending, startTransition]          = useTransition();
   const [confirmRemoveId, setConfirmRemoveId] = useState<string | null>(null);
   const [images, setImages]                   = useState(initialImages);
+  const [scheduleAdded, setScheduleAdded]     = useState<{ code: string; specName: string } | null>(null);
+  const [scheduleCodes, setScheduleCodes]     = useState<Record<string, string[]>>(scheduleCodesBySpec);
+  const [emptySlots, setEmptySlots]           = useState<EmptySlot[]>(initialEmptySlots);
+  const [scheduleDialog, setScheduleDialog]   = useState<{ specId: string; specName: string } | null>(null);
+
+  // Map category → ancestor chain (for slot eligibility — a spec can fit a slot
+  // in its own category or any ancestor, e.g. a Linen spec fits a Fabric slot).
+  const ancestorsByCategory = useMemo(() => {
+    const byId = new Map<string, CategoryNode>();
+    categories.forEach((c) => byId.set(c.id, c));
+    const out = new Map<string, Set<string>>();
+    categories.forEach((c) => {
+      const chain = new Set<string>([c.id]);
+      let cursor: string | null = c.parent_id;
+      const guard = new Set<string>();
+      while (cursor && !guard.has(cursor)) {
+        guard.add(cursor);
+        chain.add(cursor);
+        cursor = byId.get(cursor)?.parent_id ?? null;
+      }
+      out.set(c.id, chain);
+    });
+    return out;
+  }, [categories]);
 
   const active = parseSection(section);
 
@@ -131,6 +166,50 @@ export default function ProjectOptionsClient({
       const result = await addSpecToProject(projectId, { spec_id: specId });
       if (result.error) setAddError(result.error);
       else { setDialogOpen(false); setSearch(""); }
+    });
+  }
+
+  function openScheduleDialog(specId: string) {
+    const specName = specDetailMap.get(specId)?.name ?? "Spec";
+    setScheduleDialog({ specId, specName });
+  }
+
+  function eligibleEmptySlotsFor(specId: string): EmptySlot[] {
+    const spec = specDetailMap.get(specId);
+    if (!spec?.category_id) return [];
+    const allowedCats = ancestorsByCategory.get(spec.category_id) ?? new Set([spec.category_id]);
+    return emptySlots.filter((s) => allowedCats.has(s.category_id));
+  }
+
+  function handlePickExistingSlot(slotId: string, slotCode: string) {
+    if (!scheduleDialog) return;
+    const { specId, specName } = scheduleDialog;
+    setScheduleDialog(null);
+    startTransition(async () => {
+      const { error } = await assignSpecToCode(slotId, projectId, specId);
+      if (error) { alert(error); return; }
+      setEmptySlots((prev) => prev.filter((s) => s.id !== slotId));
+      setScheduleCodes((prev) => ({
+        ...prev,
+        [specId]: [...(prev[specId] ?? []), slotCode],
+      }));
+      setScheduleAdded({ code: slotCode, specName });
+    });
+  }
+
+  function handleCreateNewSlot() {
+    if (!scheduleDialog) return;
+    const { specId, specName } = scheduleDialog;
+    setScheduleDialog(null);
+    startTransition(async () => {
+      const { error, code } = await addSpecToSchedule(projectId, specId);
+      if (error) { alert(error); return; }
+      if (!code) return;
+      setScheduleCodes((prev) => ({
+        ...prev,
+        [specId]: [...(prev[specId] ?? []), code],
+      }));
+      setScheduleAdded({ code, specName });
     });
   }
 
@@ -225,6 +304,8 @@ export default function ProjectOptionsClient({
                       spec={spec}
                       onOpen={() => setOpenSpecId(spec.id)}
                       onRemove={() => setConfirmRemoveId(ps.id)}
+                      onAddToSchedule={() => openScheduleDialog(spec.id)}
+                      assignedCodes={scheduleCodes[spec.id] ?? []}
                       isPending={isPending}
                     />
                   );
@@ -285,6 +366,129 @@ export default function ProjectOptionsClient({
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {/* ── Added-to-schedule confirmation ─────────────────────────────────── */}
+      <AlertDialog open={!!scheduleAdded} onOpenChange={(open) => { if (!open) setScheduleAdded(null); }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle style={{ fontFamily: "var(--font-playfair), serif" }}>
+              Added to schedule
+            </AlertDialogTitle>
+            <AlertDialogDescription style={{ lineHeight: 1.6 }}>
+              <span style={{ color: "#1A1A1A", fontWeight: 600 }}>{scheduleAdded?.specName}</span>
+              {" "}is now assigned to code{" "}
+              <span
+                style={{
+                  display: "inline-block",
+                  fontFamily: "var(--font-inter), sans-serif",
+                  fontSize: 12,
+                  fontWeight: 600,
+                  color: "#1A1A1A",
+                  backgroundColor: "#FFDE28",
+                  borderRadius: 4,
+                  padding: "1px 6px",
+                  letterSpacing: "0.03em",
+                }}
+              >
+                {scheduleAdded?.code}
+              </span>
+              {" "}on this project&apos;s schedule.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogAction onClick={() => setScheduleAdded(null)}>OK</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* ── Schedule slot picker ───────────────────────────────────────────── */}
+      <Dialog open={!!scheduleDialog} onOpenChange={(open) => { if (!open) setScheduleDialog(null); }}>
+        <DialogContent style={{ maxWidth: 480 }}>
+          <DialogHeader>
+            <DialogTitle style={{ fontFamily: "var(--font-playfair), serif", fontSize: 20 }}>
+              Add to schedule
+            </DialogTitle>
+          </DialogHeader>
+
+          <p style={{ fontSize: 13, color: "#9A9590", marginBottom: 14, lineHeight: 1.5 }}>
+            Assign <span style={{ color: "#1A1A1A", fontWeight: 600 }}>{scheduleDialog?.specName}</span> to an existing empty code, or create a new one.
+          </p>
+
+          {(() => {
+            if (!scheduleDialog) return null;
+            const eligible = eligibleEmptySlotsFor(scheduleDialog.specId);
+            return (
+              <>
+                <div style={{ display: "flex", flexDirection: "column", gap: 4, maxHeight: 300, overflowY: "auto" }}>
+                  {eligible.length === 0 ? (
+                    <p style={{ fontSize: 13, color: "#C0BEBB", padding: "12px 4px", textAlign: "center" }}>
+                      No empty codes available for this spec&apos;s category.
+                    </p>
+                  ) : (
+                    eligible.map((slot) => (
+                      <button
+                        key={slot.id}
+                        type="button"
+                        onClick={() => handlePickExistingSlot(slot.id, slot.code)}
+                        disabled={isPending}
+                        className="flex items-center gap-3 text-left transition-colors hover:bg-black/[0.04]"
+                        style={{
+                          padding: "10px 12px",
+                          borderRadius: 8,
+                          border: "1px solid #E4E1DC",
+                          background: "#FFFFFF",
+                          cursor: "pointer",
+                          width: "100%",
+                          fontFamily: "var(--font-inter), sans-serif",
+                        }}
+                      >
+                        <span
+                          style={{
+                            display: "inline-block",
+                            fontSize: 12,
+                            fontWeight: 700,
+                            color: "#1A1A1A",
+                            backgroundColor: "#FFDE28",
+                            borderRadius: 4,
+                            padding: "2px 7px",
+                            letterSpacing: "0.04em",
+                          }}
+                        >
+                          {slot.code}
+                        </span>
+                        <span style={{ fontSize: 13, color: "#1A1A1A", flex: 1 }}>Empty code</span>
+                        <Plus size={14} style={{ color: "#9A9590" }} />
+                      </button>
+                    ))
+                  )}
+                </div>
+
+                <button
+                  type="button"
+                  onClick={handleCreateNewSlot}
+                  disabled={isPending}
+                  className="flex items-center justify-center gap-1.5 transition-opacity hover:opacity-85 mt-3"
+                  style={{
+                    width: "100%",
+                    height: 38,
+                    backgroundColor: "#FFDE28",
+                    border: "none",
+                    borderRadius: 8,
+                    fontSize: 13,
+                    fontWeight: 600,
+                    color: "#1A1A1A",
+                    cursor: "pointer",
+                    fontFamily: "var(--font-inter), sans-serif",
+                  }}
+                >
+                  <ListPlus size={14} />
+                  Create new code
+                </button>
+              </>
+            );
+          })()}
+        </DialogContent>
+      </Dialog>
 
       {/* ── Add item dialog ────────────────────────────────────────────────── */}
       <Dialog open={dialogOpen} onOpenChange={(open) => { if (!open) { setDialogOpen(false); setSearch(""); setAddError(null); } }}>
@@ -367,12 +571,16 @@ function LibraryCard({
   spec,
   onOpen,
   onRemove,
+  onAddToSchedule,
+  assignedCodes,
   isPending,
 }: {
   projectSpecId: string;
   spec: SpecDetail;
   onOpen: () => void;
   onRemove: () => void;
+  onAddToSchedule: () => void;
+  assignedCodes: string[];
   isPending: boolean;
 }) {
   return (
@@ -392,16 +600,34 @@ function LibraryCard({
               {!spec.image_url && <Package size={20} style={{ color: "#D4D2CF" }} />}
             </div>
           </div>
-          <div className="p-2.5 flex flex-col gap-1" style={{ minHeight: 72 }}>
-            <p style={{ fontSize: 9, fontWeight: 600, color: "#C0BEBB", textTransform: "uppercase", letterSpacing: "0.07em", visibility: spec.category_name ? "visible" : "hidden" }}>
+          <div className="p-2.5 flex flex-col gap-1" style={{ height: 92 }}>
+            <p style={{ fontSize: 9, fontWeight: 600, color: "#C0BEBB", textTransform: "uppercase", letterSpacing: "0.07em", visibility: spec.category_name ? "visible" : "hidden", flexShrink: 0 }}>
               {spec.category_name ?? "·"}
             </p>
-            <p className="font-semibold" style={{ fontSize: 12, color: "#1A1A1A", lineHeight: 1.3, display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden" }}>
+            <p className="font-semibold" style={{ fontSize: 12, color: "#1A1A1A", lineHeight: 1.3, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", flexShrink: 0 }} title={spec.name}>
               {spec.name}
             </p>
-            <p style={{ fontSize: 10, color: "#C0BEBB", letterSpacing: "0.02em", visibility: spec.code ? "visible" : "hidden" }}>
+            <p style={{ fontSize: 10, color: "#C0BEBB", letterSpacing: "0.02em", visibility: spec.code ? "visible" : "hidden", flexShrink: 0 }}>
               {spec.code ?? "·"}
             </p>
+            <div className="flex flex-wrap gap-1 mt-auto" style={{ minHeight: 18, overflow: "hidden" }}>
+              {assignedCodes.map((c) => (
+                <span
+                  key={c}
+                  style={{
+                    fontSize: 10,
+                    fontWeight: 600,
+                    color: "#1A1A1A",
+                    backgroundColor: "#FFDE28",
+                    borderRadius: 4,
+                    padding: "1px 5px",
+                    letterSpacing: "0.03em",
+                  }}
+                >
+                  {c}
+                </span>
+              ))}
+            </div>
           </div>
         </div>
       </button>
@@ -412,9 +638,34 @@ function LibraryCard({
         disabled={isPending}
         title="Remove from project"
         className="absolute top-2 right-2 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity hover:bg-red-50 hover:text-red-500"
-        style={{ width: 22, height: 22, borderRadius: 6, border: "none", background: "rgba(255,255,255,0.9)", cursor: "pointer", color: "#9A9590", zIndex: 1 }}
+        style={{ width: 24, height: 24, borderRadius: 6, border: "none", background: "rgba(255,255,255,0.92)", cursor: "pointer", color: "#9A9590", zIndex: 2, boxShadow: "0 1px 4px rgba(26,26,26,0.12)" }}
       >
-        <X size={11} />
+        <X size={12} />
+      </button>
+
+      <button
+        type="button"
+        onClick={onAddToSchedule}
+        disabled={isPending}
+        title="Add to schedule"
+        className="absolute left-2 right-2 flex items-center justify-center gap-1.5 opacity-0 group-hover:opacity-100 transition-opacity hover:opacity-90"
+        style={{
+          bottom: 80,
+          height: 30,
+          borderRadius: 8,
+          border: "none",
+          backgroundColor: "#1A1A1A",
+          color: "#FFFFFF",
+          cursor: "pointer",
+          zIndex: 2,
+          fontSize: 12,
+          fontWeight: 600,
+          fontFamily: "var(--font-inter), sans-serif",
+          boxShadow: "0 4px 12px rgba(26,26,26,0.25)",
+        }}
+      >
+        <ClipboardList size={13} />
+        Add to schedule
       </button>
     </div>
   );

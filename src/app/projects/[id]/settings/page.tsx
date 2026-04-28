@@ -1,6 +1,7 @@
 import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { getCurrentStudioId } from "@/lib/studio-context";
+import CurrencyField from "./CurrencyField";
 
 interface PageProps {
   params: Promise<{ id: string }>;
@@ -17,7 +18,7 @@ export default async function ProjectSettingsPage({ params }: PageProps) {
 
   const { data: project } = await supabase
     .from("projects")
-    .select("id, name, code, status, site_address, description")
+    .select("id, name, code, status, site_address, description, currency")
     .eq("id", projectId)
     .eq("studio_id", studioId)
     .single();
@@ -38,10 +39,11 @@ export default async function ProjectSettingsPage({ params }: PageProps) {
         {project.code && <Field label="Project code" value={project.code} />}
         {project.site_address && <Field label="Site address" value={project.site_address} />}
         {project.description && <Field label="Description" value={project.description} />}
+        <CurrencyField projectId={project.id} current={project.currency ?? "GBP"} />
       </div>
 
       <p style={{ fontFamily: "var(--font-inter), sans-serif", fontSize: 12, color: "#C0BEBB", marginTop: 32 }}>
-        Editing project details coming soon.
+        Editing other project details coming soon.
       </p>
     </div>
   );

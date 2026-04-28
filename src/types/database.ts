@@ -92,6 +92,7 @@ export type ProjectRow = {
   status: ProjectStatus;
   site_address: string | null;
   description: string | null;
+  currency: string;
   created_at: string;
   updated_at: string;
 };
@@ -250,6 +251,28 @@ export type ProjectOptionRow = {
   updated_at: string;
 };
 
+// ── Project Specs (migration 045) ─────────────────────────────────────────────
+// The committed schedule. Auto-generated code (e.g. "FB1") + qty + project
+// price + optional assignment to a library spec. Slots can be empty.
+
+export type ProjectSpecRow = {
+  id: string;
+  project_id: string;
+  studio_id: string;
+  category_id: string;
+  code: string;
+  sequence: number;
+  quantity: number;
+  price: number | null;
+  budget: number | null;
+  effective_unit_cost: number | null;
+  is_budgeted: boolean;
+  spec_id: string | null;
+  notes: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
 export type UserProjectStarRow = {
   user_id: string;
   project_id: string;
@@ -362,7 +385,7 @@ export type StudioMemberInsert = Insertable<Omit<StudioMemberRow, "id" | "create
 export type StudioRoleInsert = Insertable<Omit<StudioRoleRow, "id" | "created_at">>;
 export type ProjectMemberInsert = Omit<ProjectMemberRow, "id" | "created_at">;
 export type ClientInsert = Insertable<Omit<ClientRow, "id" | "created_at" | "updated_at">>;
-export type ProjectInsert = Insertable<Omit<ProjectRow, "id" | "created_at" | "updated_at">>;
+export type ProjectInsert = Insertable<Omit<ProjectRow, "id" | "created_at" | "updated_at" | "currency">> & { currency?: string };
 export type ContactInsert = Insertable<Omit<ContactRow, "id" | "created_at" | "updated_at">>;
 export type SpecTemplateInsert = Insertable<Omit<SpecTemplateRow, "id" | "created_at" | "updated_at">>;
 export type SpecTemplateFieldInsert = Insertable<Omit<SpecTemplateFieldRow, "id" | "created_at">>;
@@ -380,6 +403,7 @@ export type GlobalSpecFieldInsert = Insertable<Omit<GlobalSpecFieldRow, "id">>;
 export type GlobalSpecTagInsert = GlobalSpecTagRow;
 export type ProjectCanvasInsert = Insertable<Omit<ProjectCanvasRow, "id" | "created_at" | "updated_at">>;
 export type ProjectImageInsert = Insertable<Omit<ProjectImageRow, "id" | "created_at">>;
+export type ProjectSpecInsert = Insertable<Omit<ProjectSpecRow, "id" | "created_at" | "updated_at" | "effective_unit_cost" | "is_budgeted">>;
 
 // ── Database type — used to type the Supabase client ─────────────────────────
 
@@ -455,6 +479,12 @@ export type Database = {
         Row: ProjectOptionRow;
         Insert: ProjectOptionInsert;
         Update: Partial<ProjectOptionInsert>;
+        Relationships: EmptyRelationships;
+      };
+      project_specs: {
+        Row: ProjectSpecRow;
+        Insert: ProjectSpecInsert;
+        Update: Partial<ProjectSpecInsert>;
         Relationships: EmptyRelationships;
       };
       contact_categories: {

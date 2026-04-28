@@ -11,8 +11,8 @@
 import { useEffect, useState, useTransition } from "react";
 import { createPortal } from "react-dom";
 import Link from "next/link";
-import { X, ExternalLink, Package, Pencil, ArrowRight, Trash2, FolderPlus, Loader2, Building2 } from "lucide-react";
-import { getSpecDetail, deleteSpec, getActiveProjects, addSpecToProjectFromLibrary, type SpecDetailData } from "./actions";
+import { X, ExternalLink, Package, Pencil, ArrowRight, Trash2, FolderPlus, Loader2, Building2, Check } from "lucide-react";
+import { getSpecDetail, deleteSpec, getActiveProjects, addSpecToProjectFromLibrary, updateSpecInline, type SpecDetailData } from "./actions";
 import { SYSTEM_LABEL_MAP, SYSTEM_SCHEDULES } from "@/lib/schedule-types";
 import { Dialog, DialogContent } from "@/components/ui/dialog";
 
@@ -28,6 +28,18 @@ export default function SpecDetailModal({ specId, onClose }: Props) {
   const [deleting, setDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
   const [lightboxOpen, setLightboxOpen] = useState(false);
+
+  // Inline edit state
+  const [editing, setEditing] = useState(false);
+  const [savingEdit, setSavingEdit] = useState(false);
+  const [editError, setEditError] = useState<string | null>(null);
+  const [editName, setEditName] = useState("");
+  const [editCode, setEditCode] = useState("");
+  const [editDescription, setEditDescription] = useState("");
+  const [editCostFrom, setEditCostFrom] = useState("");
+  const [editCostTo, setEditCostTo] = useState("");
+  const [editCostUnit, setEditCostUnit] = useState("");
+  const [editFieldValues, setEditFieldValues] = useState<Record<string, string>>({});
 
   // Add to options state
   const [addToProjectOpen, setAddToProjectOpen] = useState(false);
@@ -49,6 +61,9 @@ export default function SpecDetailModal({ specId, onClose }: Props) {
     setAddSuccess(null);
     setSelectedProjectId("");
     setSelectedItemType("");
+    setEditing(false);
+    setEditError(null);
+    setSavingEdit(false);
     if (!specId) {
       setData(null);
       return;
@@ -80,6 +95,50 @@ export default function SpecDetailModal({ specId, onClose }: Props) {
         setSelectedItemType("");
       }
     });
+  }
+
+  function startEdit() {
+    if (!data?.spec) return;
+    const s = data.spec;
+    setEditName(s.name);
+    setEditCode(s.code ?? "");
+    setEditDescription(s.description ?? "");
+    setEditCostFrom(s.cost_from != null ? String(s.cost_from) : "");
+    setEditCostTo(s.cost_to != null ? String(s.cost_to) : "");
+    setEditCostUnit(s.cost_unit ?? "");
+    setEditFieldValues({ ...(data.valueMap ?? {}) });
+    setEditError(null);
+    setEditing(true);
+  }
+
+  function cancelEdit() {
+    setEditing(false);
+    setEditError(null);
+  }
+
+  async function handleSaveEdit() {
+    if (!data?.spec) return;
+    setSavingEdit(true);
+    setEditError(null);
+    const result = await updateSpecInline(data.spec.id, {
+      name: editName,
+      code: editCode.trim() || null,
+      description: editDescription.trim() || null,
+      cost_from: editCostFrom.trim() === "" ? null : Number(editCostFrom),
+      cost_to:   editCostTo.trim()   === "" ? null : Number(editCostTo),
+      cost_unit: editCostUnit.trim() || null,
+      fieldValues: editFieldValues,
+    });
+    if (result.error) {
+      setEditError(result.error);
+      setSavingEdit(false);
+      return;
+    }
+    // Refetch detail to reflect saved values
+    const fresh = await getSpecDetail(data.spec.id);
+    setData(fresh);
+    setSavingEdit(false);
+    setEditing(false);
   }
 
   async function handleDelete() {
@@ -186,7 +245,41 @@ export default function SpecDetailModal({ specId, onClose }: Props) {
             )}
 
             {/* Confirm delete prompt */}
-            {confirmDelete && !deleteError ? (
+            {editing ? (
+              <div className="flex items-center gap-2">
+                {editError && (
+                  <p style={{ fontFamily: "var(--font-inter), sans-serif", fontSize: 11, color: "#EF4444", maxWidth: 220 }}>
+                    {editError}
+                  </p>
+                )}
+                <button
+                  onClick={cancelEdit}
+                  disabled={savingEdit}
+                  style={{
+                    height: 26, paddingLeft: 10, paddingRight: 10,
+                    backgroundColor: "#F0EEEB", border: "none", borderRadius: 6,
+                    fontFamily: "var(--font-inter), sans-serif", fontSize: 11,
+                    color: "#9A9590", cursor: savingEdit ? "default" : "pointer",
+                  }}
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleSaveEdit}
+                  disabled={savingEdit}
+                  className="flex items-center gap-1"
+                  style={{
+                    height: 26, paddingLeft: 10, paddingRight: 10,
+                    backgroundColor: "#FFDE28", border: "none", borderRadius: 6,
+                    fontFamily: "var(--font-inter), sans-serif", fontSize: 11, fontWeight: 600,
+                    color: "#1A1A1A", cursor: savingEdit ? "default" : "pointer",
+                  }}
+                >
+                  {savingEdit ? <Loader2 size={11} className="animate-spin" /> : <Check size={11} />}
+                  {savingEdit ? "Saving…" : "Save"}
+                </button>
+              </div>
+            ) : confirmDelete && !deleteError ? (
               <div className="flex items-center gap-2">
                 <span style={{ fontFamily: "var(--font-inter), sans-serif", fontSize: 12, color: "#9A9590" }}>
                   Delete this spec?
@@ -233,16 +326,18 @@ export default function SpecDetailModal({ specId, onClose }: Props) {
                   </button>
                 )}
                 {spec && (
-                  <Link
-                    href={`/specs/${spec.id}/edit`}
+                  <button
+                    type="button"
+                    onClick={startEdit}
                     className="flex items-center gap-1.5 transition-opacity hover:opacity-60"
                     style={{
                       fontFamily: "var(--font-inter), sans-serif",
-                      fontSize: 12, color: "#9A9590", textDecoration: "none",
+                      fontSize: 12, color: "#9A9590",
+                      background: "none", border: "none", cursor: "pointer", padding: 0,
                     }}
                   >
                     <Pencil size={11} /> Edit
-                  </Link>
+                  </button>
                 )}
               </>
             )}
@@ -400,33 +495,104 @@ export default function SpecDetailModal({ specId, onClose }: Props) {
               <div style={{ flex: 1, minWidth: 0 }}>
 
                 {/* Name + description */}
-                <h2
-                  style={{
-                    fontFamily: "var(--font-playfair), serif",
-                    fontSize: 22, fontWeight: 700, color: "#1A1A1A",
-                    lineHeight: 1.2, marginBottom: spec?.code ? 4 : spec?.description ? 8 : 18,
-                  }}
-                >
-                  {spec?.name}
-                </h2>
-                {spec?.code && (
-                  <p style={{ fontFamily: "var(--font-inter), sans-serif", fontSize: 12, color: "#9A9590", marginBottom: spec?.description ? 8 : 18, letterSpacing: "0.03em" }}>
-                    {spec.code}
-                  </p>
-                )}
-                {spec?.description && (
-                  <p
-                    style={{
-                      fontFamily: "var(--font-inter), sans-serif",
-                      fontSize: 13, color: "#9A9590", lineHeight: 1.6, marginBottom: 18,
-                    }}
-                  >
-                    {spec.description}
-                  </p>
+                {editing ? (
+                  <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 18 }}>
+                    <input
+                      type="text"
+                      value={editName}
+                      onChange={(e) => setEditName(e.target.value)}
+                      placeholder="Name"
+                      style={{
+                        fontFamily: "var(--font-playfair), serif",
+                        fontSize: 22, fontWeight: 700, color: "#1A1A1A",
+                        lineHeight: 1.2,
+                        width: "100%", padding: "6px 10px",
+                        border: "1px solid #E4E1DC", borderRadius: 8,
+                        backgroundColor: "#FAFAF9", outline: "none",
+                      }}
+                    />
+                    <input
+                      type="text"
+                      value={editCode}
+                      onChange={(e) => setEditCode(e.target.value)}
+                      placeholder="Product code / SKU"
+                      style={inlineInputStyle}
+                    />
+                    <textarea
+                      value={editDescription}
+                      onChange={(e) => setEditDescription(e.target.value)}
+                      placeholder="Description"
+                      rows={3}
+                      style={{ ...inlineInputStyle, height: "auto", padding: "8px 10px", resize: "vertical", lineHeight: 1.5 }}
+                    />
+                  </div>
+                ) : (
+                  <>
+                    <h2
+                      style={{
+                        fontFamily: "var(--font-playfair), serif",
+                        fontSize: 22, fontWeight: 700, color: "#1A1A1A",
+                        lineHeight: 1.2, marginBottom: spec?.code ? 4 : spec?.description ? 8 : 18,
+                      }}
+                    >
+                      {spec?.name}
+                    </h2>
+                    {spec?.code && (
+                      <p style={{ fontFamily: "var(--font-inter), sans-serif", fontSize: 12, color: "#9A9590", marginBottom: spec?.description ? 8 : 18, letterSpacing: "0.03em" }}>
+                        {spec.code}
+                      </p>
+                    )}
+                    {spec?.description && (
+                      <p
+                        style={{
+                          fontFamily: "var(--font-inter), sans-serif",
+                          fontSize: 13, color: "#9A9590", lineHeight: 1.6, marginBottom: 18,
+                        }}
+                      >
+                        {spec.description}
+                      </p>
+                    )}
+                  </>
                 )}
 
-                {/* Cost */}
-                {(spec?.cost_from || spec?.cost_to) && (
+                {/* Cost (edit) */}
+                {editing && (
+                  <div style={{ marginBottom: 20 }}>
+                    <p style={{ fontFamily: "var(--font-inter), sans-serif", fontSize: 9, fontWeight: 600, color: "#9A9590", textTransform: "uppercase", letterSpacing: "0.07em", marginBottom: 8 }}>
+                      Estimated cost
+                    </p>
+                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8 }}>
+                      <input
+                        type="number"
+                        min="0"
+                        step="0.01"
+                        value={editCostFrom}
+                        onChange={(e) => setEditCostFrom(e.target.value)}
+                        placeholder="From £"
+                        style={inlineInputStyle}
+                      />
+                      <input
+                        type="number"
+                        min="0"
+                        step="0.01"
+                        value={editCostTo}
+                        onChange={(e) => setEditCostTo(e.target.value)}
+                        placeholder="To £"
+                        style={inlineInputStyle}
+                      />
+                      <input
+                        type="text"
+                        value={editCostUnit}
+                        onChange={(e) => setEditCostUnit(e.target.value)}
+                        placeholder="per m², per unit…"
+                        style={inlineInputStyle}
+                      />
+                    </div>
+                  </div>
+                )}
+
+                {/* Cost (view) */}
+                {!editing && (spec?.cost_from || spec?.cost_to) && (
                   <div
                     style={{
                       padding: "12px 16px", backgroundColor: "#FAFAF9",
@@ -467,7 +633,16 @@ export default function SpecDetailModal({ specId, onClose }: Props) {
                             <p style={{ fontFamily: "var(--font-inter), sans-serif", fontSize: 9, fontWeight: 600, color: "#B0AEA9", textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 2 }}>
                               {field.name}
                             </p>
-                            {val ? (
+                            {editing ? (
+                              <input
+                                type={field.field_type === "number" || field.field_type === "currency" ? "number" : field.field_type === "url" ? "url" : "text"}
+                                value={editFieldValues[field.id] ?? ""}
+                                onChange={(e) =>
+                                  setEditFieldValues((prev) => ({ ...prev, [field.id]: e.target.value }))
+                                }
+                                style={{ ...inlineInputStyle, fontSize: 12, padding: "5px 8px" }}
+                              />
+                            ) : val ? (
                               isUrl ? (
                                 <a
                                   href={val}
@@ -708,3 +883,17 @@ export default function SpecDetailModal({ specId, onClose }: Props) {
     </>
   );
 }
+
+const inlineInputStyle: React.CSSProperties = {
+  width: "100%",
+  height: 34,
+  padding: "0 10px",
+  fontFamily: "var(--font-inter), sans-serif",
+  fontSize: 13,
+  color: "#1A1A1A",
+  backgroundColor: "#FAFAF9",
+  border: "1px solid #E4E1DC",
+  borderRadius: 8,
+  outline: "none",
+  boxSizing: "border-box",
+};

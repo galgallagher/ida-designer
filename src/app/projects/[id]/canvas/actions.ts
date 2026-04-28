@@ -209,6 +209,26 @@ export async function getLibrarySpecs(): Promise<{
   return { error: null, specs };
 }
 
+// ── Spec ids on this project's Project Options ────────────────────────────────
+// Used by the canvas LibraryPickerModal to filter the "Project Options" tab.
+
+export async function getProjectOptionSpecIds(projectId: string): Promise<string[]> {
+  const supabase = await createClient();
+  const studioId = await getCurrentStudioId();
+  if (!studioId) return [];
+
+  const { data } = await supabase
+    .from("project_options")
+    .select("spec_id")
+    .eq("project_id", projectId)
+    .eq("studio_id", studioId)
+    .not("spec_id", "is", null);
+
+  return (data ?? [])
+    .map((r) => r.spec_id)
+    .filter((id): id is string => id !== null);
+}
+
 // ── Upload an image to canvas storage ─────────────────────────────────────────
 
 export async function uploadCanvasImage(

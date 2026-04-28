@@ -258,6 +258,77 @@ export async function updateSpec(specId: string, formData: FormData): Promise<Up
   redirect(`/specs/${specId}`);
 }
 
+// ── updateSpecInline ──────────────────────────────────────────────────────────
+// Lightweight update used by the inline editor in SpecDetailModal. Updates
+// only the fields exposed in the modal (name, code, description, cost,
+// template field values) and returns `{error}` instead of redirecting, so the
+// modal can refetch and stay open.
+
+export interface UpdateSpecInlinePatch {
+  name: string;
+  code: string | null;
+  description: string | null;
+  cost_from: number | null;
+  cost_to: number | null;
+  cost_unit: string | null;
+  fieldValues: Record<string, string>; // template_field_id → value
+}
+
+export async function updateSpecInline(
+  specId: string,
+  patch: UpdateSpecInlinePatch,
+): Promise<{ error: string | null }> {
+  const supabase = await createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return { error: "You must be logged in." };
+
+  const studioId = await getCurrentStudioId();
+  if (!studioId) return { error: "No studio found." };
+
+  const name = patch.name.trim();
+  if (!name) return { error: "Name is required." };
+
+  // Verify ownership
+  const { data: existing } = await supabase
+    .from("specs").select("id").eq("id", specId).eq("studio_id", studioId).single();
+  if (!existing) return { error: "Spec not found." };
+
+  const { error: specError } = await supabase
+    .from("specs")
+    .update({
+      name,
+      code: patch.code,
+      description: patch.description,
+      cost_from: patch.cost_from,
+      cost_to: patch.cost_to,
+      cost_unit: patch.cost_unit,
+    })
+    .eq("id", specId);
+
+  if (specError) {
+    console.error("[updateSpecInline]", specError);
+    return { error: "Failed to update spec." };
+  }
+
+  // Replace template field values
+  await supabase.from("spec_field_values").delete().eq("spec_id", specId);
+
+  const fieldEntries = Object.entries(patch.fieldValues)
+    .filter(([, v]) => v != null && v.trim() !== "")
+    .map(([template_field_id, value]) => ({
+      spec_id: specId,
+      template_field_id,
+      value: value.trim(),
+    }));
+  if (fieldEntries.length > 0) {
+    await supabase.from("spec_field_values").insert(fieldEntries);
+  }
+
+  revalidatePath(`/specs/${specId}`);
+  revalidatePath("/specs");
+  return { error: null };
+}
+
 // ── getSpecDetail ─────────────────────────────────────────────────────────────
 
 export interface SpecDetailData {

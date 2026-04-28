@@ -13,7 +13,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import dynamic from "next/dynamic";
-import { Plus, MoreHorizontal, Pencil, Trash2, Loader2, Link2, X, Check, Package, FileText, ChevronDown, Download } from "lucide-react";
+import { Plus, MoreHorizontal, Pencil, Trash2, Loader2, Link2, X, Check, Package, FileText, ChevronDown, Download, ListPlus, Eye, EyeOff } from "lucide-react";
 import {
   saveCanvasContent,
   loadCanvasContent,
@@ -23,6 +23,14 @@ import {
   uploadCanvasImage,
   type LibrarySpecLite,
 } from "./actions";
+import {
+  getScheduleContextForSpec,
+  getScheduleCodesForProject,
+  assignSpecToCode,
+  addSpecToSchedule,
+} from "../specifications/actions";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { AlertDialog, AlertDialogContent, AlertDialogHeader, AlertDialogTitle, AlertDialogDescription, AlertDialogFooter, AlertDialogAction } from "@/components/ui/alert-dialog";
 import type { Json } from "@/types/database";
 import type { Editor } from "tldraw";
 import { createShapeId } from "tldraw";
@@ -108,6 +116,33 @@ export default function ProjectCanvasClient({ projectId, studioId, canvases: ini
 
   // Spec detail modal
   const [openSpecId, setOpenSpecId] = useState<string | null>(null);
+
+  // Add-to-schedule picker dialog
+  const [scheduleDialog, setScheduleDialog] = useState<{
+    specId: string;
+    specName: string;
+    eligibleEmptySlots: { id: string; code: string }[];
+    assignedCodes: string[];
+  } | null>(null);
+  const [scheduleLoading, setScheduleLoading] = useState(false);
+  const [scheduleAdded, setScheduleAdded] = useState<{ code: string; specName: string } | null>(null);
+
+  // Hide card icon overlays (per-project preference)
+  const cardButtonsHiddenKey = `canvas:hide-card-buttons:${projectId}`;
+  const [cardButtonsHidden, setCardButtonsHidden] = useState(false);
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    setCardButtonsHidden(window.localStorage.getItem(cardButtonsHiddenKey) === "1");
+  }, [cardButtonsHiddenKey]);
+  function toggleCardButtonsHidden() {
+    setCardButtonsHidden((prev) => {
+      const next = !prev;
+      if (typeof window !== "undefined") {
+        window.localStorage.setItem(cardButtonsHiddenKey, next ? "1" : "0");
+      }
+      return next;
+    });
+  }
 
   // Library picker modal
   const [libraryPickerOpen, setLibraryPickerOpen] = useState(false);
@@ -198,6 +233,67 @@ export default function ProjectCanvasClient({ projectId, studioId, canvases: ini
     window.addEventListener("canvas:open-spec", handleOpenSpec);
     return () => window.removeEventListener("canvas:open-spec", handleOpenSpec);
   }, []);
+
+  // ── Schedule codes by spec (for the bottom-left pill on each spec card) ────
+  // Stored on window so the tldraw shape body can read it without prop drilling
+  // through tldraw's shape registry. We notify shape bodies via a window event.
+
+  const refreshScheduleCodes = useCallback(async () => {
+    const map = await getScheduleCodesForProject(projectId);
+    if (typeof window !== "undefined") {
+      (window as unknown as { __canvasScheduleCodes?: Record<string, string[]> }).__canvasScheduleCodes = map;
+      window.dispatchEvent(new CustomEvent("canvas:schedule-codes-updated"));
+    }
+  }, [projectId]);
+
+  useEffect(() => {
+    refreshScheduleCodes();
+  }, [refreshScheduleCodes]);
+
+  // ── Listen for "add to schedule" events from spec cards ─────────────────────
+
+  useEffect(() => {
+    function handleAddToSchedule(e: Event) {
+      const detail = (e as CustomEvent).detail as { specId?: string } | null;
+      if (!detail?.specId) return;
+      const specId = detail.specId;
+      setScheduleLoading(true);
+      getScheduleContextForSpec(projectId, specId).then((ctx) => {
+        setScheduleLoading(false);
+        if (ctx.error) { alert(ctx.error); return; }
+        setScheduleDialog({
+          specId,
+          specName: ctx.specName ?? "Spec",
+          eligibleEmptySlots: ctx.eligibleEmptySlots,
+          assignedCodes: ctx.assignedCodes,
+        });
+      });
+    }
+    window.addEventListener("canvas:add-to-schedule", handleAddToSchedule);
+    return () => window.removeEventListener("canvas:add-to-schedule", handleAddToSchedule);
+  }, [projectId]);
+
+  function handlePickExistingSlot(slotId: string, slotCode: string) {
+    if (!scheduleDialog) return;
+    const { specId, specName } = scheduleDialog;
+    setScheduleDialog(null);
+    assignSpecToCode(slotId, projectId, specId).then(({ error }) => {
+      if (error) { alert(error); return; }
+      setScheduleAdded({ code: slotCode, specName });
+      refreshScheduleCodes();
+    });
+  }
+
+  function handleCreateNewSlot() {
+    if (!scheduleDialog) return;
+    const { specId, specName } = scheduleDialog;
+    setScheduleDialog(null);
+    addSpecToSchedule(projectId, specId).then(({ error, code }) => {
+      if (error) { alert(error); return; }
+      if (code) setScheduleAdded({ code, specName });
+      refreshScheduleCodes();
+    });
+  }
 
   // ── Auto-save handler (called from TldrawCanvas on change) ──────────────────
 
@@ -782,6 +878,24 @@ export default function ProjectCanvasClient({ projectId, studioId, canvases: ini
           Export PDF
         </button>
 
+        {/* ── Toggle: show/hide card icon overlays ────────────────────────── */}
+        <button
+          onClick={toggleCardButtonsHidden}
+          title={cardButtonsHidden ? "Show card icons" : "Hide card icons"}
+          className="flex items-center gap-2 px-3 py-1.5 rounded-lg transition-colors hover:bg-black/[0.04]"
+          style={{
+            fontSize: 13,
+            fontWeight: 500,
+            color: "#1A1A1A",
+            backgroundColor: "#F5F4F2",
+            border: "1px solid #E4E1DC",
+            marginRight: 8,
+          }}
+        >
+          {cardButtonsHidden ? <EyeOff size={14} /> : <Eye size={14} />}
+          {cardButtonsHidden ? "Show icons" : "Hide icons"}
+        </button>
+
         {/* ── Add from Library button ─────────────────────────────────────── */}
         <button
           onClick={() => setLibraryPickerOpen(true)}
@@ -936,8 +1050,13 @@ export default function ProjectCanvasClient({ projectId, studioId, canvases: ini
         </div>
       )}
 
+      {/* CSS hook for hiding the per-card icon overlays */}
+      <style jsx global>{`
+        [data-hide-card-buttons="true"] .canvas-card-buttons { display: none !important; }
+      `}</style>
+
       {/* ── Canvas area ────────────────────────────────────────────────────── */}
-      <div className="flex-1 relative">
+      <div className="flex-1 relative" data-hide-card-buttons={cardButtonsHidden ? "true" : "false"}>
         {isLoading ? (
           <div className="flex items-center justify-center h-full">
             <Loader2 size={24} className="animate-spin" style={{ color: "#9A9590" }} />
@@ -964,7 +1083,149 @@ export default function ProjectCanvasClient({ projectId, studioId, canvases: ini
         open={libraryPickerOpen}
         onClose={() => setLibraryPickerOpen(false)}
         onSelect={handleLibrarySpecSelect}
+        projectId={projectId}
       />
+
+      {/* ── Schedule picker dialog (opens from spec card "+ schedule" button) ── */}
+      <Dialog open={!!scheduleDialog || scheduleLoading} onOpenChange={(open) => { if (!open) { setScheduleDialog(null); } }}>
+        <DialogContent style={{ maxWidth: 480 }}>
+          <DialogHeader>
+            <DialogTitle style={{ fontFamily: "var(--font-playfair), serif", fontSize: 20 }}>
+              Add to schedule
+            </DialogTitle>
+          </DialogHeader>
+
+          {scheduleLoading || !scheduleDialog ? (
+            <div style={{ padding: "24px 0", display: "flex", justifyContent: "center" }}>
+              <Loader2 size={20} className="animate-spin" style={{ color: "#9A9590" }} />
+            </div>
+          ) : (
+            <>
+              <p style={{ fontSize: 13, color: "#9A9590", marginBottom: 14, lineHeight: 1.5 }}>
+                Assign <span style={{ color: "#1A1A1A", fontWeight: 600 }}>{scheduleDialog.specName}</span> to an existing empty code, or create a new one.
+              </p>
+
+              {scheduleDialog.assignedCodes.length > 0 && (
+                <div style={{ marginBottom: 14, padding: "10px 12px", borderRadius: 8, backgroundColor: "#FAFAF9", border: "1px solid #F0EEEB" }}>
+                  <p style={{ fontSize: 9, fontWeight: 700, color: "#9A9590", textTransform: "uppercase", letterSpacing: "0.07em", marginBottom: 6 }}>
+                    Already assigned to
+                  </p>
+                  <div style={{ display: "flex", flexWrap: "wrap", gap: 5 }}>
+                    {scheduleDialog.assignedCodes.map((c) => (
+                      <span
+                        key={c}
+                        style={{
+                          fontSize: 11, fontWeight: 700,
+                          color: "#1A1A1A", backgroundColor: "#FFDE28",
+                          borderRadius: 4, padding: "2px 7px",
+                          letterSpacing: "0.04em",
+                        }}
+                      >
+                        {c}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              <div style={{ display: "flex", flexDirection: "column", gap: 4, maxHeight: 300, overflowY: "auto" }}>
+                {scheduleDialog.eligibleEmptySlots.length === 0 ? (
+                  <p style={{ fontSize: 13, color: "#C0BEBB", padding: "12px 4px", textAlign: "center" }}>
+                    No empty codes available for this spec&apos;s category.
+                  </p>
+                ) : (
+                  scheduleDialog.eligibleEmptySlots.map((slot) => (
+                    <button
+                      key={slot.id}
+                      type="button"
+                      onClick={() => handlePickExistingSlot(slot.id, slot.code)}
+                      className="flex items-center gap-3 text-left transition-colors hover:bg-black/[0.04]"
+                      style={{
+                        padding: "10px 12px",
+                        borderRadius: 8,
+                        border: "1px solid #E4E1DC",
+                        background: "#FFFFFF",
+                        cursor: "pointer",
+                        width: "100%",
+                        fontFamily: "var(--font-inter), sans-serif",
+                      }}
+                    >
+                      <span
+                        style={{
+                          display: "inline-block",
+                          fontSize: 12,
+                          fontWeight: 700,
+                          color: "#1A1A1A",
+                          backgroundColor: "#FFDE28",
+                          borderRadius: 4,
+                          padding: "2px 7px",
+                          letterSpacing: "0.04em",
+                        }}
+                      >
+                        {slot.code}
+                      </span>
+                      <span style={{ fontSize: 13, color: "#1A1A1A", flex: 1 }}>Empty code</span>
+                      <Plus size={14} style={{ color: "#9A9590" }} />
+                    </button>
+                  ))
+                )}
+              </div>
+
+              <button
+                type="button"
+                onClick={handleCreateNewSlot}
+                className="flex items-center justify-center gap-1.5 transition-opacity hover:opacity-85 mt-3"
+                style={{
+                  width: "100%",
+                  height: 38,
+                  backgroundColor: "#FFDE28",
+                  border: "none",
+                  borderRadius: 8,
+                  fontSize: 13,
+                  fontWeight: 600,
+                  color: "#1A1A1A",
+                  cursor: "pointer",
+                  fontFamily: "var(--font-inter), sans-serif",
+                }}
+              >
+                <ListPlus size={14} />
+                Create new code
+              </button>
+            </>
+          )}
+        </DialogContent>
+      </Dialog>
+
+      {/* ── Schedule added confirmation ─────────────────────────────────────── */}
+      <AlertDialog open={!!scheduleAdded} onOpenChange={(open) => { if (!open) setScheduleAdded(null); }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Added to schedule</AlertDialogTitle>
+            <AlertDialogDescription>
+              <span style={{ color: "#1A1A1A", fontWeight: 600 }}>{scheduleAdded?.specName}</span>
+              {" "}is now{" "}
+              <span
+                style={{
+                  display: "inline-block",
+                  fontSize: 12,
+                  fontWeight: 700,
+                  color: "#1A1A1A",
+                  backgroundColor: "#FFDE28",
+                  borderRadius: 4,
+                  padding: "2px 7px",
+                  letterSpacing: "0.03em",
+                }}
+              >
+                {scheduleAdded?.code}
+              </span>
+              {" "}on this project&apos;s schedule.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogAction onClick={() => setScheduleAdded(null)}>OK</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

@@ -13,38 +13,53 @@
  */
 
 import { useEffect, useState, useMemo } from "react";
-import { Search, Loader2, Check, X } from "lucide-react";
+import { Search, Loader2, Check } from "lucide-react";
 import { Dialog, DialogContent } from "@/components/ui/dialog";
-import { getLibrarySpecs, type LibrarySpecLite } from "./actions";
+import { getLibrarySpecs, getProjectOptionSpecIds, type LibrarySpecLite } from "./actions";
+import { getScheduleCodesForProject } from "../specifications/actions";
 
 interface Props {
   open: boolean;
   onClose: () => void;
   onSelect: (spec: LibrarySpecLite) => void;
+  projectId: string;
 }
 
-export default function LibraryPickerModal({ open, onClose, onSelect }: Props) {
+export default function LibraryPickerModal({ open, onClose, onSelect, projectId }: Props) {
   const [specs, setSpecs] = useState<LibrarySpecLite[]>([]);
+  const [optionIds, setOptionIds] = useState<Set<string>>(new Set());
+  const [scheduleCodes, setScheduleCodes] = useState<Record<string, string[]>>({});
+  const [tab, setTab] = useState<"options" | "specified" | "library">("options");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [query, setQuery] = useState("");
   // Track recently-added spec ids to show a transient "Added" badge.
   const [recentlyAdded, setRecentlyAdded] = useState<Record<string, number>>({});
 
-  // Fetch library on open (and refetch if reopened — cheap enough)
+  // Fetch library + project options on open
   useEffect(() => {
     if (!open) return;
     let cancelled = false;
     setLoading(true);
     setError(null);
-    getLibrarySpecs().then(({ specs, error }) => {
+    Promise.all([
+      getLibrarySpecs(),
+      getProjectOptionSpecIds(projectId),
+      getScheduleCodesForProject(projectId),
+    ]).then(([libRes, ids, codeMap]) => {
       if (cancelled) return;
-      setSpecs(specs);
-      setError(error);
+      setSpecs(libRes.specs);
+      setError(libRes.error);
+      const set = new Set(ids);
+      setOptionIds(set);
+      setScheduleCodes(codeMap);
+      // Default to whichever tab has items (prefer Specified, then Options, then Library)
+      const hasSpecified = Object.keys(codeMap).length > 0;
+      setTab(hasSpecified ? "specified" : set.size > 0 ? "options" : "library");
       setLoading(false);
     });
     return () => { cancelled = true; };
-  }, [open]);
+  }, [open, projectId]);
 
   // Reset search / badges when the modal closes
   useEffect(() => {
@@ -56,15 +71,19 @@ export default function LibraryPickerModal({ open, onClose, onSelect }: Props) {
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
-    if (!q) return specs;
-    return specs.filter((s) => {
+    let scoped = specs;
+    if (tab === "options") scoped = specs.filter((s) => optionIds.has(s.id));
+    else if (tab === "specified") scoped = specs.filter((s) => (scheduleCodes[s.id]?.length ?? 0) > 0);
+    if (!q) return scoped;
+    return scoped.filter((s) => {
       return (
         s.name.toLowerCase().includes(q) ||
         (s.code ?? "").toLowerCase().includes(q) ||
-        (s.category_name ?? "").toLowerCase().includes(q)
+        (s.category_name ?? "").toLowerCase().includes(q) ||
+        (scheduleCodes[s.id] ?? []).some((c) => c.toLowerCase().includes(q))
       );
     });
-  }, [specs, query]);
+  }, [specs, query, tab, optionIds, scheduleCodes]);
 
   function handleTileClick(spec: LibrarySpecLite) {
     onSelect(spec);
@@ -106,14 +125,17 @@ export default function LibraryPickerModal({ open, onClose, onSelect }: Props) {
           >
             Add from Product Library
           </h2>
-          <button
-            onClick={onClose}
-            className="rounded-md p-1.5 hover:bg-black/[0.04] transition-colors"
-            style={{ color: "#9A9590" }}
-            aria-label="Close"
-          >
-            <X size={16} />
-          </button>
+          {/* shadcn DialogContent renders its own close (X) button — no custom one here */}
+        </div>
+
+        {/* ── Tabs ───────────────────────────────────────────────────────── */}
+        <div
+          className="flex gap-1 px-5 flex-shrink-0"
+          style={{ borderBottom: "1px solid #E4E1DC" }}
+        >
+          <PickerTab active={tab === "options"} onClick={() => setTab("options")} label="Project Options" />
+          <PickerTab active={tab === "specified"} onClick={() => setTab("specified")} label="Specified" />
+          <PickerTab active={tab === "library"} onClick={() => setTab("library")} label="Studio Library" />
         </div>
 
         {/* ── Search ─────────────────────────────────────────────────────── */}
@@ -153,9 +175,13 @@ export default function LibraryPickerModal({ open, onClose, onSelect }: Props) {
             </div>
           ) : filtered.length === 0 ? (
             <div className="text-center py-10" style={{ fontSize: 13, color: "#9A9590" }}>
-              {specs.length === 0
-                ? "Your library is empty. Add items via the Product Library or by scraping product URLs."
-                : `No items match "${query}".`}
+              {query
+                ? `No items match "${query}".`
+                : tab === "options"
+                  ? "No items in this project's options yet. Try the Studio Library tab."
+                  : tab === "specified"
+                    ? "No specified items yet. Assign codes on the Specifications page."
+                    : "Your library is empty. Add items via the Product Library or by scraping product URLs."}
             </div>
           ) : (
             <div
@@ -164,6 +190,7 @@ export default function LibraryPickerModal({ open, onClose, onSelect }: Props) {
             >
               {filtered.map((spec) => {
                 const isRecent = !!recentlyAdded[spec.id];
+                const codes = scheduleCodes[spec.id] ?? [];
                 return (
                   <button
                     key={spec.id}
@@ -206,6 +233,40 @@ export default function LibraryPickerModal({ open, onClose, onSelect }: Props) {
                           No image
                         </div>
                       )}
+
+                      {/* Schedule code pill(s) — bottom-left */}
+                      {codes.length > 0 && !isRecent ? (
+                        <div
+                          style={{
+                            position: "absolute",
+                            bottom: 6,
+                            left: 6,
+                            display: "flex",
+                            flexWrap: "wrap",
+                            gap: 3,
+                            maxWidth: "calc(100% - 12px)",
+                          }}
+                        >
+                          {codes.map((c) => (
+                            <span
+                              key={c}
+                              style={{
+                                fontSize: 9,
+                                fontWeight: 700,
+                                color: "#1A1A1A",
+                                backgroundColor: "rgba(255,255,255,0.95)",
+                                boxShadow: "0 1px 4px rgba(26,26,26,0.15)",
+                                borderRadius: 20,
+                                padding: "2px 7px",
+                                letterSpacing: "0.06em",
+                                textTransform: "uppercase",
+                              }}
+                            >
+                              {c}
+                            </span>
+                          ))}
+                        </div>
+                      ) : null}
 
                       {/* "Added" badge */}
                       {isRecent ? (
@@ -297,5 +358,28 @@ export default function LibraryPickerModal({ open, onClose, onSelect }: Props) {
         </div>
       </DialogContent>
     </Dialog>
+  );
+}
+
+function PickerTab({ active, onClick, label }: { active: boolean; onClick: () => void; label: string }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="px-3 py-2 transition-colors"
+      style={{
+        background: "none",
+        border: "none",
+        borderBottom: active ? "2px solid #1A1A1A" : "2px solid transparent",
+        marginBottom: -1,
+        fontFamily: "var(--font-inter), sans-serif",
+        fontSize: 13,
+        fontWeight: active ? 600 : 500,
+        color: active ? "#1A1A1A" : "#9A9590",
+        cursor: "pointer",
+      }}
+    >
+      {label}
+    </button>
   );
 }

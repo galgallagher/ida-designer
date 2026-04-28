@@ -1,6 +1,6 @@
 # ADR 018 — Project Canvas
 
-**Status:** Accepted (updated 2026-04-27 — CanvasImageShape + project_images added)
+**Status:** Accepted (updated 2026-04-28 — schedule-code overlays, image repositioning, hide-icons toggle, custom-shape ↔ parent communication pattern)
 **Date:** 2026-04-15
 
 ## Context
@@ -33,11 +33,36 @@ Each uploaded image is also recorded in the `project_images` table (`project_id`
 
 Two distinct custom tldraw shapes serve different purposes on the canvas:
 
-**`SpecCardShape`** — created when a spec is placed from the "Add from Library" picker or via the Ida widget scrape flow. Renders a rich product card (image, name, code). Has an ⓘ button to toggle a detail footer and an arrow button to open the full spec modal. These cards link to a `project_options` row — removing the spec from Project Options deletes all matching `SpecCardShape` instances from every canvas via server-side JSON patching.
+**`SpecCardShape`** — created when a spec is placed from the "Add from Library" picker or via the Ida widget scrape flow. Renders the spec image as the entire card with two action buttons in the top-right (clipboard = add-to-schedule, arrow = open detail modal) and a white pill in the bottom-left when the spec has been assigned a schedule code. These cards link to a `project_options` row — removing the spec from Project Options deletes all matching `SpecCardShape` instances from every canvas via server-side JSON patching.
+
+The `code`, `category`, and `showInfo` props were retired (no longer rendered) but kept on the shape schema for backwards-compatibility with existing canvas snapshots.
 
 **`CanvasImageShape`** — created when a user pastes or drops an image file directly onto the canvas. Stores an `imageId` prop linking to a `project_images` DB row. Has an eye button (dropdown) to tag the image as **Inspiration** or **Sketch**. Tagged images appear in Project Options under the matching section. Deleting an image from Project Options removes the DB row, the Storage file, and patches out the shape from canvas JSON.
 
 The two shapes are intentionally separate: spec cards are structured library items; canvas images are freeform visual references.
+
+### Custom-shape ↔ parent component communication
+
+Custom tldraw shapes live inside tldraw's renderer; threading React callbacks through the shape registry is awkward. We use two patterns instead:
+
+1. **Window CustomEvents** for shape → parent triggers. A button on a shape calls `window.dispatchEvent(new CustomEvent("canvas:open-spec", { detail: { specId } }))`; the parent (`ProjectCanvasClient`) listens with `window.addEventListener` in a `useEffect`. Used for: `canvas:open-spec`, `canvas:add-to-schedule`.
+
+2. **Window-level signal map** for parent → shape data. The parent maintains shared data (e.g. `Record<specId, scheduleCodes[]>`) on `window.__canvasScheduleCodes` and dispatches `canvas:schedule-codes-updated` whenever it changes. Shapes subscribe via a small `useState` + `useEffect` hook (see `useScheduleCodesForSpec`). Avoids prop-drilling through tldraw's typed shape props.
+
+These patterns are the project's standard way of bridging the React tree inside tldraw and the surrounding app.
+
+### Image repositioning (objectOffsetX/Y)
+
+Both `SpecCardShape` and `CanvasImageShape` support InDesign-style image repositioning inside their frame. tldraw's built-in crop tool only works with its native `image` shape, so we implemented a small alternative:
+
+- Two optional shape props: `imageOffsetX`, `imageOffsetY` (0–1, default 0.5/0.5 = centered). They feed CSS `object-position` on the underlying `<img>` (which has `object-fit: cover`).
+- `canEdit = () => true` flips the shape into tldraw's editing mode on double-click. We detect this via `useEditor()` + `useValue(() => editor.getEditingShapeId() === shape.id)`.
+- In edit mode, the image area becomes a pointer-capture target. The drag handler computes overflow from `naturalWidth/Height` × cover scale and updates offsets via `editor.updateShape`. A single `markHistoryStoppingPoint` call gives one undo entry per drag.
+- A small "Drag image · Esc to finish" pill is shown while editing; Escape / clicking outside exits via tldraw's default behaviour.
+
+### Hide-icons toggle
+
+A header toggle (`Hide icons` / `Show icons`) hides every per-card overlay (action buttons, schedule-code pills, INSPIRATION/SKETCH pills) for a clean printout / screenshot view. Implementation: every overlay container carries the `canvas-card-buttons` class; the canvas wrapper sets `data-hide-card-buttons="true"` driven by a per-project localStorage flag; one global CSS rule (`[data-hide-card-buttons="true"] .canvas-card-buttons { display: none !important }`) does the work. Preference is stored as `canvas:hide-card-buttons:{projectId}` in localStorage.
 
 ### Persistence
 

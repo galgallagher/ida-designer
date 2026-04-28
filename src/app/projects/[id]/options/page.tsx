@@ -19,7 +19,7 @@ export default async function ProjectOptionsPage({ params, searchParams }: PageP
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) notFound();
 
-  const [{ data: projectData }, projectSpecsResult, studioSpecsResult, imagesResult] =
+  const [{ data: projectData }, projectSpecsResult, studioSpecsResult, imagesResult, scheduleSlotsResult] =
     await Promise.all([
       supabase
         .from("projects")
@@ -45,6 +45,12 @@ export default async function ProjectOptionsPage({ params, searchParams }: PageP
         .eq("project_id", projectId)
         .eq("studio_id", studioId)
         .order("created_at", { ascending: false }),
+      supabase
+        .from("project_specs")
+        .select("id, spec_id, code, sequence, category_id")
+        .eq("project_id", projectId)
+        .eq("studio_id", studioId)
+        .order("sequence"),
     ]);
 
   if (!projectData) notFound();
@@ -66,6 +72,7 @@ export default async function ProjectOptionsPage({ params, searchParams }: PageP
     name: s.name,
     code: s.code ?? null,
     image_url: s.image_url ?? null,
+    category_id: s.category_id ?? null,
     category_name: s.category_id ? (catMap.get(s.category_id) ?? null) : null,
     cost_from: s.cost_from ?? null,
     cost_to: s.cost_to ?? null,
@@ -76,6 +83,27 @@ export default async function ProjectOptionsPage({ params, searchParams }: PageP
     (projectSpecsResult.data ?? []).map((r) => r.spec_id).filter((id): id is string => id !== null),
   );
 
+  // Build map of specId → schedule codes assigned to it.
+  const scheduleCodesBySpec: Record<string, string[]> = {};
+  const emptySlots: { id: string; code: string; category_id: string }[] = [];
+  (scheduleSlotsResult.data ?? []).forEach((row) => {
+    if (row.spec_id) {
+      const list = scheduleCodesBySpec[row.spec_id] ?? [];
+      list.push(row.code);
+      scheduleCodesBySpec[row.spec_id] = list;
+    } else {
+      emptySlots.push({ id: row.id, code: row.code, category_id: row.category_id });
+    }
+  });
+
+  // Fetch all categories so the client can map slot category_id → descendants
+  // (a spec can be assigned to a slot in its own category or any ancestor).
+  const { data: allCats } = await supabase
+    .from("spec_categories")
+    .select("id, name, parent_id")
+    .eq("studio_id", studioId)
+    .eq("is_active", true);
+
   return (
     <ProjectOptionsClient
       projectId={projectId}
@@ -85,6 +113,9 @@ export default async function ProjectOptionsPage({ params, searchParams }: PageP
       alreadyAddedIds={[...alreadyAddedIds]}
       images={(imagesResult.data ?? []) as ProjectImageRow[]}
       section={section ?? null}
+      scheduleCodesBySpec={scheduleCodesBySpec}
+      emptySlots={emptySlots}
+      categories={(allCats ?? []).map((c) => ({ id: c.id, name: c.name, parent_id: c.parent_id }))}
     />
   );
 }
