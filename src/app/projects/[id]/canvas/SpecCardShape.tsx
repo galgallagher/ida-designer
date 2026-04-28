@@ -19,6 +19,7 @@ import {
 } from "tldraw";
 import { useEffect, useRef, useState } from "react";
 import type React from "react";
+import { ImageStyleBar } from "./ImageStyleBar";
 
 // Reads the global schedule-code map maintained by ProjectCanvasClient and
 // re-renders when it changes. Returns the codes assigned to this spec.
@@ -55,6 +56,10 @@ type SpecCardShapeProps = {
   // the box without changing the box itself. Editable via double-click.
   imageOffsetX?: number;
   imageOffsetY?: number;
+  // Transform controls
+  flipX?: boolean;
+  flipY?: boolean;
+  cornerRadius?: number; // px, default 14
 };
 
 function cardButtonStyle(pressed: boolean): React.CSSProperties {
@@ -90,6 +95,9 @@ function SpecCardBody({
 
   const offsetX = shape.props.imageOffsetX ?? 0.5;
   const offsetY = shape.props.imageOffsetY ?? 0.5;
+  const flipX = shape.props.flipX ?? false;
+  const flipY = shape.props.flipY ?? false;
+  const flipTransform = [flipX && "scaleX(-1)", flipY && "scaleY(-1)"].filter(Boolean).join(" ") || undefined;
 
   const imgRef = useRef<HTMLImageElement | null>(null);
   // Live offsets while dragging (avoid hammering shape store on every move).
@@ -188,6 +196,7 @@ function SpecCardBody({
               display: "block",
               userSelect: "none",
               pointerEvents: "none",
+              transform: flipTransform,
             }}
           />
         ) : (
@@ -292,6 +301,9 @@ export class SpecCardShapeUtil extends BaseBoxShapeUtil<SpecCardShape> {
     showInfo: T.boolean.optional(),
     imageOffsetX: T.number.optional(),
     imageOffsetY: T.number.optional(),
+    flipX: T.boolean.optional(),
+    flipY: T.boolean.optional(),
+    cornerRadius: T.number.optional(),
   };
 
   getDefaultProps(): SpecCardShape["props"] {
@@ -306,15 +318,20 @@ export class SpecCardShapeUtil extends BaseBoxShapeUtil<SpecCardShape> {
       showInfo: false,
       imageOffsetX: 0.5,
       imageOffsetY: 0.5,
+      flipX: false,
+      flipY: false,
+      cornerRadius: 0,
     };
   }
 
   override canResize = () => true;
   override canEdit = () => true; // double-click → reposition image inside the frame
-  override hideRotateHandle = () => true;
 
   component(shape: SpecCardShape) {
     const { w, h, specId } = shape.props;
+    const flipX = shape.props.flipX ?? false;
+    const flipY = shape.props.flipY ?? false;
+    const cornerRadius = shape.props.cornerRadius ?? 0;
     // eslint-disable-next-line react-hooks/rules-of-hooks
     const editor = useEditor();
     // eslint-disable-next-line react-hooks/rules-of-hooks
@@ -323,6 +340,19 @@ export class SpecCardShapeUtil extends BaseBoxShapeUtil<SpecCardShape> {
       () => editor.getEditingShapeId() === shape.id,
       [editor, shape.id],
     );
+    // eslint-disable-next-line react-hooks/rules-of-hooks
+    const isSelected = useValue(
+      "isSelectedSpecCard",
+      () => {
+        const ids = editor.getSelectedShapeIds();
+        return ids.length === 1 && ids[0] === shape.id;
+      },
+      [editor, shape.id],
+    );
+
+    const updateProps = (props: Partial<SpecCardShapeProps>) => {
+      editor.updateShape<SpecCardShape>({ id: shape.id, type: "spec-card", props });
+    };
 
     function openModal(e: React.MouseEvent | React.PointerEvent) {
       e.stopPropagation();
@@ -338,57 +368,82 @@ export class SpecCardShapeUtil extends BaseBoxShapeUtil<SpecCardShape> {
           width: w,
           height: h,
           pointerEvents: "all",
-          overflow: "hidden",
-          borderRadius: 14,
-          backgroundColor: "#FFFFFF",
-          boxShadow: "0 2px 12px rgba(26,26,26,0.08)",
-          display: "flex",
-          flexDirection: "column",
+          overflow: "visible",
           fontFamily: "var(--font-inter), sans-serif",
           position: "relative",
         }}
       >
-        <SpecCardBody shape={shape} editor={editor} isEditing={isEditing} />
+        {/* Style bar — floats above shape when selected (not while repositioning) */}
+        {isSelected && !isEditing && (
+          <ImageStyleBar
+            flipX={flipX}
+            flipY={flipY}
+            cornerRadius={cornerRadius}
+            maxRadius={Math.floor(Math.min(w, h) / 2)}
+            isSquare={w === h}
+            onFlipX={() => updateProps({ flipX: !flipX })}
+            onFlipY={() => updateProps({ flipY: !flipY })}
+            onSetRadius={(r) => updateProps({ cornerRadius: r })}
+            onMakeSquare={() => {
+              const s = Math.min(w, h);
+              updateProps({ w: s, h: s });
+            }}
+          />
+        )}
 
-        <div className="canvas-card-buttons" style={{ position: "absolute", top: 8, right: 8, display: "flex", gap: 6 }}>
-          {/* + — add to schedule */}
-          {specId ? (
+        {/* Card frame — clips image to rounded corners */}
+        <div style={{
+          position: "absolute",
+          inset: 0,
+          overflow: "hidden",
+          borderRadius: cornerRadius,
+          backgroundColor: "#FFFFFF",
+          boxShadow: "0 2px 12px rgba(26,26,26,0.08)",
+          display: "flex",
+          flexDirection: "column",
+        }}>
+          <SpecCardBody shape={shape} editor={editor} isEditing={isEditing} />
+
+          <div className="canvas-card-buttons" style={{ position: "absolute", top: 8, right: 8, display: "flex", gap: 6 }}>
+            {/* + — add to schedule */}
+            {specId ? (
+              <button
+                type="button"
+                title="Add to schedule"
+                aria-label="Add to schedule"
+                onPointerDown={(e) => e.stopPropagation()}
+                onPointerUp={(e) => e.stopPropagation()}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  window.dispatchEvent(new CustomEvent("canvas:add-to-schedule", { detail: { specId } }));
+                }}
+                style={cardButtonStyle(false)}
+              >
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                  <rect x="8" y="3" width="8" height="4" rx="1" />
+                  <path d="M8 5H6a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-2" />
+                  <path d="M12 11v6" />
+                  <path d="M9 14h6" />
+                </svg>
+              </button>
+            ) : null}
+
+            {/* ↗ — open spec detail modal */}
             <button
               type="button"
-              title="Add to schedule"
-              aria-label="Add to schedule"
+              title="Open product details"
+              aria-label="Open product details"
               onPointerDown={(e) => e.stopPropagation()}
               onPointerUp={(e) => e.stopPropagation()}
-              onClick={(e) => {
-                e.stopPropagation();
-                window.dispatchEvent(new CustomEvent("canvas:add-to-schedule", { detail: { specId } }));
-              }}
+              onClick={openModal}
               style={cardButtonStyle(false)}
             >
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                <rect x="8" y="3" width="8" height="4" rx="1" />
-                <path d="M8 5H6a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-2" />
-                <path d="M12 11v6" />
-                <path d="M9 14h6" />
+                <path d="M7 17L17 7" />
+                <path d="M8 7h9v9" />
               </svg>
             </button>
-          ) : null}
-
-          {/* ↗ — open spec detail modal */}
-          <button
-            type="button"
-            title="Open product details"
-            aria-label="Open product details"
-            onPointerDown={(e) => e.stopPropagation()}
-            onPointerUp={(e) => e.stopPropagation()}
-            onClick={openModal}
-            style={cardButtonStyle(false)}
-          >
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-              <path d="M7 17L17 7" />
-              <path d="M8 7h9v9" />
-            </svg>
-          </button>
+          </div>
         </div>
       </HTMLContainer>
     );
@@ -396,6 +451,7 @@ export class SpecCardShapeUtil extends BaseBoxShapeUtil<SpecCardShape> {
 
   override async toSvg(shape: SpecCardShape) {
     const { w, h, imageUrl } = shape.props;
+    const cornerRadius = shape.props.cornerRadius ?? 0;
 
     let embeddedSrc: string | null = null;
     if (imageUrl) {
@@ -427,7 +483,7 @@ export class SpecCardShapeUtil extends BaseBoxShapeUtil<SpecCardShape> {
             width: w,
             height: h,
             overflow: "hidden",
-            borderRadius: 14,
+            borderRadius: cornerRadius,
             backgroundColor: "#FFFFFF",
             boxShadow: "0 2px 12px rgba(26,26,26,0.08)",
             display: "flex",
@@ -442,6 +498,7 @@ export class SpecCardShapeUtil extends BaseBoxShapeUtil<SpecCardShape> {
   }
 
   indicator(shape: SpecCardShape) {
-    return <rect width={shape.props.w} height={shape.props.h} rx={14} ry={14} />;
+    const r = shape.props.cornerRadius ?? 0;
+    return <rect width={shape.props.w} height={shape.props.h} rx={r} ry={r} />;
   }
 }

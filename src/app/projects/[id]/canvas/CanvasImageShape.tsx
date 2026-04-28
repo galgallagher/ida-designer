@@ -22,6 +22,7 @@ import {
 } from "tldraw";
 import React, { useState, useRef, useEffect } from "react";
 import { tagProjectImage } from "./actions";
+import { ImageStyleBar } from "./ImageStyleBar";
 
 export type CanvasImageTag = "inspiration" | "sketch";
 
@@ -35,6 +36,10 @@ type CanvasImageShapeProps = {
   // Editable via double-click. See SpecCardShape for the same pattern.
   imageOffsetX?: number;
   imageOffsetY?: number;
+  // Transform controls
+  flipX?: boolean;
+  flipY?: boolean;
+  cornerRadius?: number; // px, default 10
 };
 
 const TAG_CONFIG: Record<CanvasImageTag, { label: string; bg: string; color: string }> = {
@@ -200,6 +205,9 @@ function CanvasImageBody({
   const { w, h, imageUrl } = shape.props;
   const offsetX = shape.props.imageOffsetX ?? 0.5;
   const offsetY = shape.props.imageOffsetY ?? 0.5;
+  const flipX = shape.props.flipX ?? false;
+  const flipY = shape.props.flipY ?? false;
+  const flipTransform = [flipX && "scaleX(-1)", flipY && "scaleY(-1)"].filter(Boolean).join(" ") || undefined;
 
   const imgRef = useRef<HTMLImageElement | null>(null);
   const [liveOffset, setLiveOffset] = useState<{ x: number; y: number } | null>(null);
@@ -284,6 +292,7 @@ function CanvasImageBody({
           display: "block",
           userSelect: "none",
           pointerEvents: "none",
+          transform: flipTransform,
         }}
       />
     </div>
@@ -310,21 +319,27 @@ export class CanvasImageShapeUtil extends BaseBoxShapeUtil<CanvasImageShape> {
     tag: T.string.optional() as T.Validatable<CanvasImageTag | undefined>,
     imageOffsetX: T.number.optional(),
     imageOffsetY: T.number.optional(),
+    flipX: T.boolean.optional(),
+    flipY: T.boolean.optional(),
+    cornerRadius: T.number.optional(),
   };
 
   getDefaultProps(): CanvasImageShape["props"] {
     return {
       w: 400, h: 300, imageUrl: "", imageId: "", tag: undefined,
       imageOffsetX: 0.5, imageOffsetY: 0.5,
+      flipX: false, flipY: false, cornerRadius: 0,
     };
   }
 
   override canResize = () => true;
   override canEdit = () => true; // double-click → reposition image inside the frame
-  override hideRotateHandle = () => true;
 
   component(shape: CanvasImageShape) {
     const { w, h, imageUrl, imageId, tag } = shape.props;
+    const flipX = shape.props.flipX ?? false;
+    const flipY = shape.props.flipY ?? false;
+    const cornerRadius = shape.props.cornerRadius ?? 0;
     const editor = this.editor;
     // eslint-disable-next-line react-hooks/rules-of-hooks
     const editorFromHook = useEditor();
@@ -332,6 +347,15 @@ export class CanvasImageShapeUtil extends BaseBoxShapeUtil<CanvasImageShape> {
     const isEditing = useValue(
       "isEditingCanvasImage",
       () => editorFromHook.getEditingShapeId() === shape.id,
+      [editorFromHook, shape.id],
+    );
+    // eslint-disable-next-line react-hooks/rules-of-hooks
+    const isSelected = useValue(
+      "isSelectedCanvasImage",
+      () => {
+        const ids = editorFromHook.getSelectedShapeIds();
+        return ids.length === 1 && ids[0] === shape.id;
+      },
       [editorFromHook, shape.id],
     );
 
@@ -347,6 +371,10 @@ export class CanvasImageShapeUtil extends BaseBoxShapeUtil<CanvasImageShape> {
       }
     };
 
+    const updateProps = (props: Partial<CanvasImageShapeProps>) => {
+      editor.updateShape<CanvasImageShape>({ id: shape.id, type: "canvas-image", props });
+    };
+
     return (
       <HTMLContainer
         id={shape.id}
@@ -354,66 +382,91 @@ export class CanvasImageShapeUtil extends BaseBoxShapeUtil<CanvasImageShape> {
           width: w,
           height: h,
           pointerEvents: "all",
-          overflow: "hidden",
-          borderRadius: 10,
-          backgroundColor: "#F5F4F2",
-          boxShadow: "0 2px 12px rgba(26,26,26,0.08)",
+          overflow: "visible",
           position: "relative",
         }}
       >
-        <CanvasImageBody shape={shape} editor={editorFromHook} isEditing={isEditing} />
-
-        {/* Edit-mode hint */}
-        {isEditing && (
-          <div
-            className="canvas-card-buttons"
-            style={{
-              position: "absolute",
-              top: 8,
-              left: 8,
-              padding: "3px 9px",
-              borderRadius: 20,
-              backgroundColor: "rgba(26,26,26,0.78)",
-              color: "#FFFFFF",
-              fontSize: 9,
-              fontWeight: 700,
-              letterSpacing: "0.07em",
-              textTransform: "uppercase",
-              pointerEvents: "none",
-              boxShadow: "0 1px 4px rgba(26,26,26,0.2)",
+        {/* Style bar — floats above shape when selected (not while repositioning) */}
+        {isSelected && !isEditing && (
+          <ImageStyleBar
+            flipX={flipX}
+            flipY={flipY}
+            cornerRadius={cornerRadius}
+            maxRadius={Math.floor(Math.min(w, h) / 2)}
+            isSquare={w === h}
+            onFlipX={() => updateProps({ flipX: !flipX })}
+            onFlipY={() => updateProps({ flipY: !flipY })}
+            onSetRadius={(r) => updateProps({ cornerRadius: r })}
+            onMakeSquare={() => {
+              const s = Math.min(w, h);
+              updateProps({ w: s, h: s });
             }}
-          >
-            Drag image · Esc to finish
-          </div>
+          />
         )}
 
-        {/* Tag pill — subtle label at bottom-left when tagged */}
-        {tag && (
-          <div
-            className="canvas-card-buttons"
-            style={{
-              position: "absolute",
-              bottom: 8,
-              left: 8,
-              padding: "3px 9px",
-              borderRadius: 20,
-              backgroundColor: TAG_CONFIG[tag].bg,
-              color: TAG_CONFIG[tag].color,
-              boxShadow: "0 1px 4px rgba(26,26,26,0.15)",
-              fontSize: 9,
-              fontWeight: 700,
-              letterSpacing: "0.07em",
-              textTransform: "uppercase",
-              pointerEvents: "none",
-            }}
-          >
-            {TAG_CONFIG[tag].label}
-          </div>
-        )}
+        {/* Image frame — clips image to rounded corners */}
+        <div style={{
+          position: "absolute",
+          inset: 0,
+          overflow: "hidden",
+          borderRadius: cornerRadius,
+          backgroundColor: "#F5F4F2",
+          boxShadow: "0 2px 12px rgba(26,26,26,0.08)",
+        }}>
+          <CanvasImageBody shape={shape} editor={editorFromHook} isEditing={isEditing} />
 
-        {/* Eye button — top-right */}
-        <div className="canvas-card-buttons" style={{ position: "absolute", top: 8, right: 8 }}>
-          <TagButton tag={tag} onSetTag={setTag} />
+          {/* Edit-mode hint */}
+          {isEditing && (
+            <div
+              className="canvas-card-buttons"
+              style={{
+                position: "absolute",
+                top: 8,
+                left: 8,
+                padding: "3px 9px",
+                borderRadius: 20,
+                backgroundColor: "rgba(26,26,26,0.78)",
+                color: "#FFFFFF",
+                fontSize: 9,
+                fontWeight: 700,
+                letterSpacing: "0.07em",
+                textTransform: "uppercase",
+                pointerEvents: "none",
+                boxShadow: "0 1px 4px rgba(26,26,26,0.2)",
+              }}
+            >
+              Drag image · Esc to finish
+            </div>
+          )}
+
+          {/* Tag pill — subtle label at bottom-left when tagged */}
+          {tag && (
+            <div
+              className="canvas-card-buttons"
+              style={{
+                position: "absolute",
+                bottom: 8,
+                left: 8,
+                padding: "3px 9px",
+                borderRadius: 20,
+                backgroundColor: TAG_CONFIG[tag].bg,
+                color: TAG_CONFIG[tag].color,
+                boxShadow: "0 1px 4px rgba(26,26,26,0.15)",
+                fontSize: 9,
+                fontWeight: 700,
+                letterSpacing: "0.07em",
+                textTransform: "uppercase",
+                pointerEvents: "none",
+              }}
+            >
+              {TAG_CONFIG[tag].label}
+            </div>
+          )}
+
+          {/* Eye button — top-right */}
+          <div className="canvas-card-buttons" style={{ position: "absolute", top: 8, right: 8 }}>
+            <TagButton tag={tag} onSetTag={setTag} />
+          </div>
         </div>
       </HTMLContainer>
     );
@@ -421,6 +474,10 @@ export class CanvasImageShapeUtil extends BaseBoxShapeUtil<CanvasImageShape> {
 
   override async toSvg(shape: CanvasImageShape) {
     const { w, h, imageUrl } = shape.props;
+    const cornerRadius = shape.props.cornerRadius ?? 0;
+    const flipX = shape.props.flipX ?? false;
+    const flipY = shape.props.flipY ?? false;
+    const flipTransform = [flipX && "scaleX(-1)", flipY && "scaleY(-1)"].filter(Boolean).join(" ") || undefined;
 
     let embeddedSrc: string | null = null;
     if (imageUrl) {
@@ -445,16 +502,17 @@ export class CanvasImageShapeUtil extends BaseBoxShapeUtil<CanvasImageShape> {
       <foreignObject x={0} y={0} width={w} height={h}>
         <div
           {...{ xmlns: "http://www.w3.org/1999/xhtml" }}
-          style={{ width: w, height: h, overflow: "hidden", borderRadius: 10 }}
+          style={{ width: w, height: h, overflow: "hidden", borderRadius: cornerRadius }}
         >
           {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src={src} alt="" style={{ width: "100%", height: "100%", objectFit: "cover", objectPosition: `${ox}% ${oy}%`, display: "block" }} />
+          <img src={src} alt="" style={{ width: "100%", height: "100%", objectFit: "cover", objectPosition: `${ox}% ${oy}%`, display: "block", transform: flipTransform }} />
         </div>
       </foreignObject>
     );
   }
 
   indicator(shape: CanvasImageShape) {
-    return <rect width={shape.props.w} height={shape.props.h} rx={10} ry={10} />;
+    const r = shape.props.cornerRadius ?? 0;
+    return <rect width={shape.props.w} height={shape.props.h} rx={r} ry={r} />;
   }
 }

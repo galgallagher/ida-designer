@@ -93,6 +93,35 @@
 .hide-scrollbar { scrollbar-width: none; }
 .hide-scrollbar::-webkit-scrollbar { display: none; }
 
+/* ── Canvas image style bar — corner radius slider ───────────────────────────*/
+.ida-radius-slider {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 72px;
+  height: 4px;
+  border-radius: 2px;
+  background: #E4E1DC;
+  cursor: pointer;
+  outline: none;
+  flex-shrink: 0;
+}
+.ida-radius-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 13px;
+  height: 13px;
+  border-radius: 50%;
+  background: #1A1A1A;
+  cursor: pointer;
+}
+.ida-radius-slider::-moz-range-thumb {
+  width: 13px;
+  height: 13px;
+  border-radius: 50%;
+  background: #1A1A1A;
+  cursor: pointer;
+  border: none;
+}
+
 /* ── Project Canvas — tldraw layout overrides ────────────────────────────────
  * The Ida chat widget lives anchored to the right side of the viewport.
  * tldraw's StylePanel (colours / size picker) also defaults to top-right,
