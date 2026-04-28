@@ -32,6 +32,13 @@ import { useStorage, useMutation, useMyPresence, useOthers, type JsonObject } fr
 
 const CUSTOM_SHAPE_UTILS = [SpecCardShapeUtil, CanvasImageShapeUtil];
 
+// Document-scope records are shared across users; session records
+// (instance, camera, pointer, presence) stay local to each client.
+const DOCUMENT_TYPENAMES = new Set(["document", "page", "shape", "binding", "asset"]);
+function isDocumentRecord(record: { typeName?: string } | undefined): boolean {
+  return !!record?.typeName && DOCUMENT_TYPENAMES.has(record.typeName);
+}
+
 interface Props {
   initialContent: Json | null;
   onSave: (content: Json) => Promise<void>;
@@ -67,7 +74,13 @@ function CursorsOverlay({ editor }: { editor: Editor }) {
     <div style={{ position: "absolute", inset: 0, pointerEvents: "none", overflow: "hidden", zIndex: 10 }}>
       {others.map(({ connectionId, presence, info }) => {
         if (!presence.cursor) return null;
+        // pageToScreen returns window/viewport-relative coords; the overlay is
+        // positioned inside the tldraw container, so subtract the container's
+        // screen offset to get container-local coords.
         const screen = editor.pageToScreen(presence.cursor);
+        const bounds = editor.getViewportScreenBounds();
+        const x = screen.x - bounds.x;
+        const y = screen.y - bounds.y;
         const color = (info as { color?: string } | null)?.color ?? "#9A9590";
         const name = (info as { name?: string } | null)?.name ?? "User";
         return (
@@ -75,8 +88,8 @@ function CursorsOverlay({ editor }: { editor: Editor }) {
             key={connectionId}
             style={{
               position: "absolute",
-              left: screen.x,
-              top: screen.y,
+              left: x,
+              top: y,
               transform: "translate(-2px, -2px)",
               pointerEvents: "none",
             }}
@@ -147,14 +160,17 @@ export default function TldrawCanvas({
   // ── Liveblocks hooks ────────────────────────────────────────────────────────
 
   // All tldraw records from Liveblocks Storage. Null while the room is loading.
-  // Cast needed because useStorage infers ReadonlyJsonObject but we need map methods.
-  const records = useStorage((root) => root.records) as unknown as ReadonlyMap<string, Record<string, unknown>> | null;
+  // useStorage returns the LiveMap as a plain object snapshot, not a Map.
+  const records = useStorage((root) => root.records) as unknown as Record<string, JsonObject> | null;
 
   // Seed the Liveblocks room from a Supabase snapshot (first open only).
+  // Only document-scope records are shared; session records (instance state,
+  // camera, presence) stay local to each user.
   const seedRoom = useMutation(
     ({ storage }, initialRecords: Record<string, TLRecord>) => {
       const lbRecords = storage.get("records");
       for (const [id, record] of Object.entries(initialRecords)) {
+        if (!isDocumentRecord(record)) continue;
         lbRecords.set(id, record as unknown as JsonObject);
       }
     },
@@ -176,13 +192,16 @@ export default function TldrawCanvas({
     ) => {
       const lbRecords = storage.get("records");
       for (const record of Object.values(changes.added)) {
+        if (!isDocumentRecord(record as TLRecord)) continue;
         lbRecords.set((record as TLRecord).id, record as unknown as JsonObject);
       }
       for (const update of Object.values(changes.updated)) {
         const after = (update as [TLRecord, TLRecord])[1];
+        if (!isDocumentRecord(after)) continue;
         lbRecords.set(after.id, after as unknown as JsonObject);
       }
-      for (const id of Object.keys(changes.removed)) {
+      for (const [id, record] of Object.entries(changes.removed)) {
+        if (!isDocumentRecord(record as TLRecord)) continue;
         lbRecords.delete(id);
       }
     },
@@ -227,7 +246,9 @@ export default function TldrawCanvas({
       return;
     }
 
-    if (records.size === 0 && !hasSeededRef.current) {
+    const recordKeys = Object.keys(records);
+
+    if (recordKeys.length === 0 && !hasSeededRef.current) {
       // New room — seed from Supabase snapshot if we have one
       hasSeededRef.current = true;
       const snap = initialContent as {
@@ -240,20 +261,24 @@ export default function TldrawCanvas({
       }
     }
 
-    // Apply all Liveblocks records to the tldraw store
+    // Apply all Liveblocks records to the tldraw store. Only touch
+    // document-scope records — session state stays local to each client.
     store.mergeRemoteChanges(() => {
-      const remoteIds = new Set(records.keys());
-      const localIds = store.allRecords().map((r) => r.id);
+      const remoteIds = new Set(recordKeys);
+      const localDocumentIds = store
+        .allRecords()
+        .filter(isDocumentRecord)
+        .map((r) => r.id);
 
-      // Remove local records that no longer exist in Liveblocks
-      const toRemove = localIds.filter((id) => !remoteIds.has(id));
+      // Remove local document records that no longer exist in Liveblocks
+      const toRemove = localDocumentIds.filter((id) => !remoteIds.has(id));
       if (toRemove.length > 0) {
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         store.remove(toRemove as any);
       }
 
-      // Upsert all remote records (cast from JsonObject back to TLRecord)
-      const toUpsert = [...records.values()] as unknown as TLRecord[];
+      // Upsert all remote records (already filtered to document scope on push)
+      const toUpsert = Object.values(records) as unknown as TLRecord[];
       if (toUpsert.length > 0) {
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         store.put(toUpsert as any);
@@ -276,7 +301,9 @@ export default function TldrawCanvas({
   useEffect(() => {
     const unsub = store.listen(
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      (changes: any) => {
+      (entry: any) => {
+        const changes = entry.changes;
+        if (!changes) return;
         pushChanges({
           added: changes.added ?? {},
           updated: changes.updated ?? {},
