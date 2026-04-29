@@ -8,7 +8,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { ArrowLeft, LayoutDashboard, Package, Users, Settings, Palette, ClipboardList } from "lucide-react";
+import { ArrowLeft, LayoutDashboard, Package, Users, Settings, Palette, ClipboardList, Box } from "lucide-react";
 import type { ProjectStatus } from "@/types/database";
 
 const statusConfig: Record<ProjectStatus, { dot: string; label: string }> = {
@@ -54,6 +54,7 @@ export default function ProjectNav({
   const sections: ProjectNavSection[] = [
     { label: "Overview",         href: base,               icon: LayoutDashboard },
     { label: "Canvas",           href: `${base}/canvas`,   icon: Palette },
+    { label: "3D Studio",        href: `${base}/studio`,   icon: Box },
     { label: "Project Options",  href: `${base}/options`,  icon: Package },
     { label: "Specifications",   href: `${base}/specifications`, icon: ClipboardList },
     { label: "Team",             href: `${base}/team`,     icon: Users },

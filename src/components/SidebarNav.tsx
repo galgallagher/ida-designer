@@ -11,7 +11,7 @@
 import { useState } from "react";
 import { usePathname } from "next/navigation";
 import Link from "next/link";
-import { Users, Briefcase, Package, BookUser, LogOut, Star, Settings, Layers } from "lucide-react";
+import { Users, Briefcase, Package, BookUser, LogOut, Star, Settings, Layers, ShieldCheck } from "lucide-react";
 import type { ProfileRow, ClientRow } from "@/types/database";
 import StudioSwitcher from "./StudioSwitcher";
 import { toggleProjectStar } from "@/app/projects/actions";
@@ -19,12 +19,13 @@ import { toggleProjectStar } from "@/app/projects/actions";
 // ── Nav items ────────────────────────────────────────────────────────────────
 
 const allNavItems = [
-  { label: "Clients",      href: "/clients",   icon: Users,     adminOnly: true  },
-  { label: "Projects",     href: "/projects",  icon: Briefcase, adminOnly: false },
-  { label: "Product Library",  href: "/specs",     icon: Package,   adminOnly: false },
-  { label: "Finishes",         href: "/finishes",  icon: Layers,    adminOnly: false },
-  { label: "Contacts",         href: "/contacts",  icon: BookUser,  adminOnly: false },
-  { label: "Settings",     href: "/settings",  icon: Settings,  adminOnly: true  },
+  { label: "Clients",         href: "/clients",  icon: Users,       adminOnly: true,  superAdminOnly: false },
+  { label: "Projects",        href: "/projects", icon: Briefcase,   adminOnly: false, superAdminOnly: false },
+  { label: "Product Library", href: "/specs",    icon: Package,     adminOnly: false, superAdminOnly: false },
+  { label: "Finishes",        href: "/finishes", icon: Layers,      adminOnly: false, superAdminOnly: false },
+  { label: "Contacts",        href: "/contacts", icon: BookUser,    adminOnly: false, superAdminOnly: false },
+  { label: "Settings",        href: "/settings", icon: Settings,    adminOnly: true,  superAdminOnly: false },
+  { label: "Admin",           href: "/admin",    icon: ShieldCheck, adminOnly: false, superAdminOnly: true  },
 ];
 
 // ── Types ────────────────────────────────────────────────────────────────────
@@ -54,6 +55,7 @@ interface SidebarNavProps {
   allStudios: Studio[];
   signOutAction: () => Promise<void>;
   isAdmin?: boolean;
+  isSuperAdmin?: boolean;
 }
 
 // ── Fade helper styles ────────────────────────────────────────────────────────
@@ -80,11 +82,16 @@ export default function SidebarNav({
   allStudios,
   signOutAction,
   isAdmin = false,
+  isSuperAdmin = false,
 }: SidebarNavProps) {
   const pathname = usePathname();
   const [expanded, setExpanded] = useState(false);
 
-  const navItems = allNavItems.filter((item) => !item.adminOnly || isAdmin);
+  const navItems = allNavItems.filter((item) => {
+    if (item.superAdminOnly) return isSuperAdmin;
+    if (item.adminOnly) return isAdmin;
+    return true;
+  });
 
   const isClientsSection = pathname === "/clients" || pathname.startsWith("/clients/");
   const isProjectsSection = pathname === "/projects" || pathname.startsWith("/projects/");

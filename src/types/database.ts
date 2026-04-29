@@ -342,6 +342,18 @@ export type StudioMaterialRow = {
   updated_at: string;
 };
 
+export type DefaultFinishRow = {
+  id: string;
+  category: MaterialCategory;
+  name: string;
+  description: string | null;
+  image_url: string | null;
+  image_path: string | null;
+  sort_order: number;
+  created_at: string;
+  updated_at: string;
+};
+
 // ── Project Images ────────────────────────────────────────────────────────────
 
 export type ProjectImageType = "inspiration" | "sketch";
@@ -371,6 +383,24 @@ export type ProjectCanvasRow = {
   updated_at: string;
 };
 
+// ── Studio Models (3D Studio) ─────────────────────────────────────────────────
+
+export type StudioModelFormat = "glb" | "gltf" | "obj" | "fbx";
+
+export type StudioModelRow = {
+  id: string;
+  studio_id: string;
+  project_id: string;
+  name: string;
+  file_path: string;
+  format: StudioModelFormat;
+  material_assignments: Json; // { [meshName: string]: specId }
+  mesh_labels: Json;          // { [originalMeshName: string]: displayName }
+  thumbnail_url: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
 // ── Insert types ──────────────────────────────────────────────────────────────
 
 type Insertable<T> = {
@@ -395,6 +425,7 @@ export type SpecCategoryInsert = Insertable<Omit<SpecCategoryRow, "id" | "create
 export type SpecSupplierInsert = SpecSupplierRow;
 export type ProjectOptionInsert = Insertable<Omit<ProjectOptionRow, "id" | "created_at" | "updated_at">>;
 export type StudioMaterialInsert = Insertable<Omit<StudioMaterialRow, "id" | "created_at" | "updated_at">>;
+export type DefaultFinishInsert = Insertable<Omit<DefaultFinishRow, "id" | "created_at" | "updated_at">>;
 export type ContactCategoryInsert = Insertable<Omit<ContactCategoryRow, "id" | "created_at">>;
 export type ContactCompanyInsert = Insertable<Omit<ContactCompanyRow, "id" | "created_at" | "updated_at">>;
 export type ContactPersonInsert = Insertable<Omit<ContactPersonRow, "id" | "created_at" | "updated_at">>;
@@ -404,6 +435,7 @@ export type GlobalSpecTagInsert = GlobalSpecTagRow;
 export type ProjectCanvasInsert = Insertable<Omit<ProjectCanvasRow, "id" | "created_at" | "updated_at">>;
 export type ProjectImageInsert = Insertable<Omit<ProjectImageRow, "id" | "created_at">>;
 export type ProjectSpecInsert = Insertable<Omit<ProjectSpecRow, "id" | "created_at" | "updated_at" | "effective_unit_cost" | "is_budgeted">>;
+export type StudioModelInsert = Insertable<Omit<StudioModelRow, "created_at" | "updated_at">> & { id?: string };
 
 // ── Database type — used to type the Supabase client ─────────────────────────
 
@@ -581,6 +613,18 @@ export type Database = {
         Row: ProjectImageRow;
         Insert: ProjectImageInsert;
         Update: Partial<Omit<ProjectImageRow, "id" | "created_at">>;
+        Relationships: EmptyRelationships;
+      };
+      studio_models: {
+        Row: StudioModelRow;
+        Insert: StudioModelInsert;
+        Update: Partial<Omit<StudioModelRow, "id" | "created_at">>;
+        Relationships: EmptyRelationships;
+      };
+      default_finishes: {
+        Row: DefaultFinishRow;
+        Insert: DefaultFinishInsert;
+        Update: Partial<Omit<DefaultFinishRow, "id" | "created_at">>;
         Relationships: EmptyRelationships;
       };
     };

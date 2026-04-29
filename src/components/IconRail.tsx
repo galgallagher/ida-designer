@@ -10,7 +10,7 @@
 import { useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Users, Briefcase, Package, LogOut, Settings, Layers } from "lucide-react";
+import { Users, Briefcase, Package, LogOut, Settings, Layers, ShieldCheck } from "lucide-react";
 import {
   Tooltip,
   TooltipContent,
@@ -19,25 +19,31 @@ import {
 } from "@/components/ui/tooltip";
 
 const navItems = [
-  { href: "/clients",  icon: Users,     label: "Clients",      adminOnly: true  },
-  { href: "/projects", icon: Briefcase, label: "Projects",     adminOnly: false },
-  { href: "/specs",     icon: Package,  label: "Product Library", adminOnly: false },
-  { href: "/finishes",  icon: Layers,   label: "Finishes",        adminOnly: false },
-  { href: "/settings",  icon: Settings, label: "Settings",        adminOnly: true  },
+  { href: "/clients",  icon: Users,        label: "Clients",         adminOnly: true,  superAdminOnly: false },
+  { href: "/projects", icon: Briefcase,    label: "Projects",        adminOnly: false, superAdminOnly: false },
+  { href: "/specs",    icon: Package,      label: "Product Library", adminOnly: false, superAdminOnly: false },
+  { href: "/finishes", icon: Layers,       label: "Finishes",        adminOnly: false, superAdminOnly: false },
+  { href: "/settings", icon: Settings,     label: "Settings",        adminOnly: true,  superAdminOnly: false },
+  { href: "/admin",    icon: ShieldCheck,  label: "Admin",           adminOnly: false, superAdminOnly: true  },
 ];
 
 interface IconRailProps {
   initials: string;
   displayName?: string;
   isAdmin?: boolean;
+  isSuperAdmin?: boolean;
   signOutAction: () => Promise<void>;
 }
 
-export default function IconRail({ initials, displayName, isAdmin = false, signOutAction }: IconRailProps) {
+export default function IconRail({ initials, displayName, isAdmin = false, isSuperAdmin = false, signOutAction }: IconRailProps) {
   const pathname = usePathname();
   const [expanded, setExpanded] = useState(false);
 
-  const visible = navItems.filter((i) => !i.adminOnly || isAdmin);
+  const visible = navItems.filter((i) => {
+    if (i.superAdminOnly) return isSuperAdmin;
+    if (i.adminOnly) return isAdmin;
+    return true;
+  });
 
   return (
     <TooltipProvider delayDuration={300}>

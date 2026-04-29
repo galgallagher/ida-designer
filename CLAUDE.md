@@ -21,7 +21,7 @@ A SaaS platform for interior design studios. Studios manage clients, projects, d
 ## Memory & ADRs — read these first
 
 - **`memory/MEMORY.md`** — full project context, schema, file structure, design tokens, known debt
-- **`docs/adr/`** — 23 ADRs covering every major architectural decision (000–023)
+- **`docs/adr/`** — 28 ADRs covering every major architectural decision (000–028)
 
 Always read existing ADRs before making architectural changes.
 
@@ -72,6 +72,12 @@ The canvas is real-time multiplayer via Liveblocks. Liveblocks holds the live `L
 
 ### Canvas image style controls
 Flip, rotate, corner radius, and make-square live in a shared `ImageStyleBar` floating above selected image shapes. The bar is identical for `CanvasImageShape` and `SpecCardShape` — don't duplicate the controls. Corner radius is a slider (0 → `min(w,h)/2`), default 0. See ADR 026.
+
+### 3D Studio
+`/projects/[id]/studio` — landing card grid → click into per-model editor. R3F + Three.js viewer with mesh selection, multi-select (shift/cmd-click), per-mesh spec assignment, scale/rotation/levels sliders, scene tab (tone mapping, exposure, env intensity, background, key light, shadow, grid). Auto-saves to `studio_models` (assignments + mesh labels) on 800 ms debounce. Source materials are stripped on load — users always reassign Ida specs. Supports GLB, GLTF, FBX, OBJ. WebGL2 only (WebGPU deferred). See ADR 027.
+
+### Platform Admin
+`/admin/*` — super-admin only. Uses dedicated `AdminShell` (no studio context). Sections: Studios list/detail, Default Finishes, Global Library (Soon). The `default_finishes` table + `trg_seed_default_finishes` trigger replaces the dead `seed_default_studio_materials()` SQL function — defaults are now data-driven and curated visually. Existing studios sync via "Copy to all studios" one-shot. See ADR 028.
 
 ## What NOT to do without planning first
 
