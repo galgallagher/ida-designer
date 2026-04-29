@@ -4,80 +4,70 @@
  * Replaces the standard AppShell with a dual-layer nav:
  *   [IconRail 56px] [ProjectNav 220px] [main content]
  *
- * Fetches the project + client name server-side so ProjectNav has what it needs.
+ * Uses request-cached `getUserContext()` (ADR 029) for auth / studio resolution,
+ * then fetches all project-scoped data in a single parallel round.
  */
 
 import { notFound, redirect } from "next/navigation";
-import { cookies } from "next/headers";
 import { createClient } from "@/lib/supabase/server";
+import { getUserContext } from "@/lib/user-context";
 import { signOut } from "@/app/login/actions";
 import IconRail from "@/components/IconRail";
 import ProjectNav from "@/components/ProjectNav";
 import IdaWidget from "@/components/IdaWidget";
-import type { ProfileRow, ProjectRow, StudioMemberRole, StudioRow } from "@/types/database";
+import type { ProjectStatus } from "@/types/database";
 
 interface LayoutProps {
   children: React.ReactNode;
   params: Promise<{ id: string }>;
 }
 
+type ProjectWithClient = {
+  id: string;
+  name: string;
+  code: string | null;
+  status: ProjectStatus;
+  client_id: string;
+  clients: { name: string } | null;
+};
+
 export default async function ProjectLayout({ children, params }: LayoutProps) {
   const { id } = await params;
+
+  const ctx = await getUserContext();
+  if (!ctx.user) redirect("/login");
+  const { initials, displayName, isAdmin, isSuperAdmin, currentStudioId } = ctx;
+
+  // Single parallel round — none of these depend on each other.
+  // The project query joins clients(name) so we don't need a follow-up round.
   const supabase = await createClient();
-
-  // Auth check
-  const { data: { user } } = await supabase.auth.getUser();
-  if (!user) redirect("/login");
-
-  // Round 2: fetch profile, memberships, and project all in parallel —
-  // none depend on each other, they only need user.id and the URL param id.
-  const cookieStore = await cookies();
-  const [{ data: profileData }, { data: memberships }, { data: projectData }] = await Promise.all([
-    supabase.from("profiles").select("*").eq("id", user.id).single(),
-    supabase.from("studio_members").select("studio_id, role").eq("user_id", user.id).order("created_at", { ascending: true }),
-    supabase.from("projects").select("*").eq("id", id).single(),
-  ]);
-
-  if (!projectData) notFound();
-  const project = projectData;
-  const profile = profileData;
-
-  const firstName = profile?.first_name || "";
-  const lastName  = profile?.last_name  || "";
-  const displayName = firstName ? `${firstName} ${lastName}`.trim() : (user.email?.split("@")[0] ?? "User");
-  const initials  = firstName
-    ? `${firstName[0]}${lastName[0] ?? ""}`.toUpperCase()
-    : (user.email?.[0] ?? "U").toUpperCase();
-
-  const cookieStudioId = cookieStore.get("current_studio_id")?.value;
-  const studioIds = (memberships ?? []).map((m) => m.studio_id);
-  const currentStudioId = (cookieStudioId && studioIds.includes(cookieStudioId))
-    ? cookieStudioId
-    : studioIds[0] ?? null;
-
-  const currentMembership = (memberships ?? []).find((m) => m.studio_id === currentStudioId);
-  const studioRole = currentMembership?.role ?? null;
-  const isAdmin = profile?.platform_role === "super_admin" || studioRole === "owner" || studioRole === "admin";
-
-  // Round 3: client name + project options sub-nav data
-  const [{ data: clientData }, { data: optionsData }, { data: imagesData }] = await Promise.all([
-    supabase.from("clients").select("name").eq("id", project.client_id).single(),
-    supabase.from("project_options")
+  const [projectRes, optionsRes, imagesRes] = await Promise.all([
+    supabase
+      .from("projects")
+      .select("id, name, code, status, client_id, clients(name)")
+      .eq("id", id)
+      .single<ProjectWithClient>(),
+    supabase
+      .from("project_options")
       .select("specs(spec_categories(name))")
       .eq("project_id", id)
       .eq("studio_id", currentStudioId ?? "")
       .not("spec_id", "is", null),
-    supabase.from("project_images")
+    supabase
+      .from("project_images")
       .select("type")
       .eq("project_id", id)
       .eq("studio_id", currentStudioId ?? ""),
   ]);
 
-  const clientName = clientData?.name ?? "Unknown client";
+  const project = projectRes.data;
+  if (!project) notFound();
+
+  const clientName = project.clients?.name ?? "Unknown client";
 
   // Build category list for ProjectNav sub-nav
   const catCounts = new Map<string, number>();
-  (optionsData ?? []).forEach((o) => {
+  (optionsRes.data ?? []).forEach((o) => {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const name = (o as any).specs?.spec_categories?.name as string | undefined;
     if (name) catCounts.set(name, (catCounts.get(name) ?? 0) + 1);
@@ -85,13 +75,13 @@ export default async function ProjectLayout({ children, params }: LayoutProps) {
   const optionCategories = Array.from(catCounts.entries())
     .sort(([a], [b]) => a.localeCompare(b))
     .map(([label, count]) => ({ label, count }));
-  const inspirationCount = (imagesData ?? []).filter((i) => i.type === "inspiration").length;
-  const sketchCount      = (imagesData ?? []).filter((i) => i.type === "sketch").length;
+  const inspirationCount = (imagesRes.data ?? []).filter((i) => i.type === "inspiration").length;
+  const sketchCount      = (imagesRes.data ?? []).filter((i) => i.type === "sketch").length;
 
   return (
     <div className="flex h-screen overflow-hidden" style={{ backgroundColor: "#EDEDED" }}>
       {/* Collapsed icon-only main nav */}
-      <IconRail initials={initials} displayName={displayName} isAdmin={isAdmin} signOutAction={signOut} />
+      <IconRail initials={initials} displayName={displayName} isAdmin={isAdmin} isSuperAdmin={isSuperAdmin} signOutAction={signOut} />
 
       {/* Project-specific sidebar */}
       <ProjectNav

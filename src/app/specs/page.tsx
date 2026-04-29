@@ -34,12 +34,16 @@ export default async function SpecLibraryPage() {
 
   const categories = categoriesData ?? [];
 
-  // Fetch all specs with their tags and suppliers (joined)
+  // Fetch all specs with their tags and suppliers (joined).
+  // Hard-cap at 2000 — beyond that the library needs proper pagination
+  // / server-side search (separate change). Guards against catastrophic
+  // loads on very large studios; today's libraries are well under this.
   const { data: specsData } = await supabase
     .from("specs")
     .select("*")
     .eq("studio_id", studioId)
-    .order("name", { ascending: true });
+    .order("name", { ascending: true })
+    .limit(2000);
 
   const specs = specsData ?? [];
 

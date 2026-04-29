@@ -40,12 +40,14 @@ export default async function ContactsPage() {
 
   const categories = categoriesData ?? [];
 
-  // Fetch companies
+  // Fetch companies. Hard-cap at 1000 — beyond that the page needs
+  // pagination (separate change). Guards against catastrophic loads.
   const { data: companiesData } = await supabase
     .from("contact_companies")
     .select("*")
     .eq("studio_id", studioId)
-    .order("name");
+    .order("name")
+    .limit(1000);
 
   const companies = companiesData ?? [];
 

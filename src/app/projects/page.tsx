@@ -29,13 +29,16 @@ export default async function ProjectsPage() {
 
   const { data: { user } } = await supabase.auth.getUser();
 
-  // Fetch projects, clients, and user's stars in parallel
+  // Fetch projects, clients, and user's stars in parallel.
+  // Hard-cap projects at 1000 — beyond that the page needs proper
+  // pagination (separate change). This guards against catastrophic loads
+  // for unusually large studios without changing today's behaviour.
   const [{ data: projectsData }, { data: clientsData }, { data: starsData }] = await Promise.all([
     studioId
-      ? supabase.from("projects").select("*").eq("studio_id", studioId).order("created_at", { ascending: false })
+      ? supabase.from("projects").select("*").eq("studio_id", studioId).order("created_at", { ascending: false }).limit(1000)
       : Promise.resolve({ data: [] }),
     studioId
-      ? supabase.from("clients").select("id, name").eq("studio_id", studioId)
+      ? supabase.from("clients").select("id, name").eq("studio_id", studioId).limit(1000)
       : Promise.resolve({ data: [] }),
     user ? supabase.from("user_project_stars").select("project_id").eq("user_id", user.id) : Promise.resolve({ data: [] }),
   ]);
