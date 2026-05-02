@@ -37,7 +37,7 @@ export const createCategoryTool = () =>
       if (!studioId) return { error: "No studio context found." };
 
       const { data: existing } = await supabase
-        .from("spec_categories")
+        .from("library_categories")
         .select("sort_order")
         .eq("studio_id", studioId)
         .is("parent_id", null)
@@ -47,7 +47,7 @@ export const createCategoryTool = () =>
       const nextOrder = (existing?.[0]?.sort_order ?? 0) + 10;
 
       const { data, error } = await supabase
-        .from("spec_categories")
+        .from("library_categories")
         .insert({ studio_id: studioId, name, icon: icon ?? "layers", sort_order: nextOrder, is_active: true })
         .select("id, name")
         .single();

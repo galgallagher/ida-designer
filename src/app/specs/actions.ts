@@ -39,7 +39,7 @@ export async function createSpec(formData: FormData): Promise<CreateSpecResult> 
 
   // ── Create spec ────────────────────────────────────────────────────────────
   const { data: newSpec, error: specError } = await supabase
-    .from("specs")
+    .from("library_items")
     .insert({ studio_id: studioId, template_id, category_id, name, description, cost_from, cost_to, cost_unit, image_url: imageUrlInput, image_path: null })
     .select("id")
     .single();
@@ -63,21 +63,21 @@ export async function createSpec(formData: FormData): Promise<CreateSpecResult> 
       return { error: "Spec saved but image upload failed. Try editing the spec to add the image again." };
     }
     const { data: urlData } = supabase.storage.from("spec-images").getPublicUrl(path);
-    await supabase.from("specs")
+    await supabase.from("library_items")
       .update({ image_url: urlData.publicUrl, image_path: path })
       .eq("id", specId);
   }
 
   // ── Save field values ──────────────────────────────────────────────────────
-  const fieldEntries: { spec_id: string; template_field_id: string; value: string }[] = [];
+  const fieldEntries: { library_item_id: string; template_field_id: string; value: string }[] = [];
   for (const [key, val] of formData.entries()) {
     if (key.startsWith("field_") && typeof val === "string" && val.trim()) {
       const fieldId = key.replace("field_", "");
-      fieldEntries.push({ spec_id: specId, template_field_id: fieldId, value: val.trim() });
+      fieldEntries.push({ library_item_id: specId, template_field_id: fieldId, value: val.trim() });
     }
   }
   if (fieldEntries.length > 0) {
-    await supabase.from("spec_field_values").insert(fieldEntries);
+    await supabase.from("library_item_field_values").insert(fieldEntries);
   }
 
   // ── Save tags ──────────────────────────────────────────────────────────────
@@ -85,7 +85,7 @@ export async function createSpec(formData: FormData): Promise<CreateSpecResult> 
   if (tagsRaw) {
     const tags = tagsRaw.split(",").map((t) => t.trim().toLowerCase()).filter(Boolean);
     if (tags.length > 0) {
-      await supabase.from("spec_tags").insert(tags.map((tag) => ({ spec_id: specId, tag })));
+      await supabase.from("library_item_tags").insert(tags.map((tag) => ({ library_item_id: specId, tag })));
     }
   }
 
@@ -95,8 +95,8 @@ export async function createSpec(formData: FormData): Promise<CreateSpecResult> 
   const unitCost = parseFloat(formData.get("unit_cost") as string) || null;
 
   if (supplierId) {
-    await supabase.from("spec_suppliers").insert({
-      spec_id: specId, supplier_id: supplierId, supplier_code: supplierCode, unit_cost: unitCost,
+    await supabase.from("library_item_suppliers").insert({
+      library_item_id: specId, supplier_id: supplierId, supplier_code: supplierCode, unit_cost: unitCost,
     });
   }
 
@@ -117,8 +117,8 @@ export async function createSpec(formData: FormData): Promise<CreateSpecResult> 
       .single();
 
     if (newSup) {
-      await supabase.from("spec_suppliers").insert({
-        spec_id: specId, supplier_id: newSup.id,
+      await supabase.from("library_item_suppliers").insert({
+        library_item_id: specId, supplier_id: newSup.id,
         supplier_code: supplierCode, unit_cost: unitCost,
       });
     }
@@ -179,7 +179,7 @@ export async function updateSpec(specId: string, formData: FormData): Promise<Up
 
   // ── Update core spec row ───────────────────────────────────────────────────
   const { error: specError } = await supabase
-    .from("specs")
+    .from("library_items")
     .update({ name, code, description, cost_from, cost_to, cost_unit, image_url: finalImageUrl, image_path: finalImagePath })
     .eq("id", specId);
 
@@ -189,41 +189,41 @@ export async function updateSpec(specId: string, formData: FormData): Promise<Up
   }
 
   // ── Replace field values ───────────────────────────────────────────────────
-  await supabase.from("spec_field_values").delete().eq("spec_id", specId);
+  await supabase.from("library_item_field_values").delete().eq("library_item_id", specId);
 
-  const fieldEntries: { spec_id: string; template_field_id: string; value: string }[] = [];
+  const fieldEntries: { library_item_id: string; template_field_id: string; value: string }[] = [];
   for (const [key, val] of formData.entries()) {
     if (key.startsWith("field_") && typeof val === "string" && val.trim()) {
       const fieldId = key.replace("field_", "");
-      fieldEntries.push({ spec_id: specId, template_field_id: fieldId, value: val.trim() });
+      fieldEntries.push({ library_item_id: specId, template_field_id: fieldId, value: val.trim() });
     }
   }
   if (fieldEntries.length > 0) {
-    await supabase.from("spec_field_values").insert(fieldEntries);
+    await supabase.from("library_item_field_values").insert(fieldEntries);
   }
 
   // ── Replace tags ───────────────────────────────────────────────────────────
-  await supabase.from("spec_tags").delete().eq("spec_id", specId);
+  await supabase.from("library_item_tags").delete().eq("library_item_id", specId);
 
   const tagsRaw = (formData.get("tags") as string | null)?.trim() ?? "";
   if (tagsRaw) {
     const tags = tagsRaw.split(",").map((t) => t.trim().toLowerCase()).filter(Boolean);
     if (tags.length > 0) {
-      await supabase.from("spec_tags").insert(tags.map((tag) => ({ spec_id: specId, tag })));
+      await supabase.from("library_item_tags").insert(tags.map((tag) => ({ library_item_id: specId, tag })));
     }
   }
 
   // ── Replace suppliers ──────────────────────────────────────────────────────
   const supplierMode = (formData.get("supplier_mode") as string | null) ?? "none";
-  await supabase.from("spec_suppliers").delete().eq("spec_id", specId);
+  await supabase.from("library_item_suppliers").delete().eq("library_item_id", specId);
 
   if (supplierMode === "existing") {
     const supplierId = (formData.get("supplier_id") as string | null)?.trim() || null;
     const supplierCode = (formData.get("supplier_code") as string | null)?.trim() || null;
     const unitCost = parseFloat(formData.get("unit_cost") as string) || null;
     if (supplierId) {
-      await supabase.from("spec_suppliers").insert({
-        spec_id: specId, supplier_id: supplierId, supplier_code: supplierCode, unit_cost: unitCost,
+      await supabase.from("library_item_suppliers").insert({
+        library_item_id: specId, supplier_id: supplierId, supplier_code: supplierCode, unit_cost: unitCost,
       });
     }
   } else if (supplierMode === "new") {
@@ -246,8 +246,8 @@ export async function updateSpec(specId: string, formData: FormData): Promise<Up
       if (newSup) {
         const supplierCode = (formData.get("supplier_code") as string | null)?.trim() || null;
         const unitCost = parseFloat(formData.get("unit_cost") as string) || null;
-        await supabase.from("spec_suppliers").insert({
-          spec_id: specId, supplier_id: newSup.id, supplier_code: supplierCode, unit_cost: unitCost,
+        await supabase.from("library_item_suppliers").insert({
+          library_item_id: specId, supplier_id: newSup.id, supplier_code: supplierCode, unit_cost: unitCost,
         });
       }
     }
@@ -290,11 +290,11 @@ export async function updateSpecInline(
 
   // Verify ownership
   const { data: existing } = await supabase
-    .from("specs").select("id").eq("id", specId).eq("studio_id", studioId).single();
+    .from("library_items").select("id").eq("id", specId).eq("studio_id", studioId).single();
   if (!existing) return { error: "Spec not found." };
 
   const { error: specError } = await supabase
-    .from("specs")
+    .from("library_items")
     .update({
       name,
       code: patch.code,
@@ -311,17 +311,17 @@ export async function updateSpecInline(
   }
 
   // Replace template field values
-  await supabase.from("spec_field_values").delete().eq("spec_id", specId);
+  await supabase.from("library_item_field_values").delete().eq("library_item_id", specId);
 
   const fieldEntries = Object.entries(patch.fieldValues)
     .filter(([, v]) => v != null && v.trim() !== "")
     .map(([template_field_id, value]) => ({
-      spec_id: specId,
+      library_item_id: specId,
       template_field_id,
       value: value.trim(),
     }));
   if (fieldEntries.length > 0) {
-    await supabase.from("spec_field_values").insert(fieldEntries);
+    await supabase.from("library_item_field_values").insert(fieldEntries);
   }
 
   revalidatePath(`/specs/${specId}`);
@@ -334,7 +334,7 @@ export async function updateSpecInline(
 export interface SpecDetailData {
   spec: {
     id: string; name: string; code: string | null; description: string | null; image_url: string | null;
-    source_url: string | null; global_spec_id: string | null; variant_group_id: string | null;
+    source_url: string | null; product_library_id: string | null; variant_group_id: string | null;
     template_id: string; category_id: string | null;
     cost_from: number | null; cost_to: number | null; cost_unit: string | null; created_at: string;
   };
@@ -353,32 +353,32 @@ export interface SpecDetailData {
 export async function getSpecDetail(id: string): Promise<SpecDetailData | null> {
   const supabase = await createClient();
 
-  const { data: spec } = await supabase.from("specs").select("*").eq("id", id).single();
+  const { data: spec } = await supabase.from("library_items").select("*").eq("id", id).single();
   if (!spec) return null;
 
   // Category
   const { data: catData } = spec.category_id
-    ? await supabase.from("spec_categories").select("id, name").eq("id", spec.category_id).single()
+    ? await supabase.from("library_categories").select("id, name").eq("id", spec.category_id).single()
     : { data: null };
 
   // Template fields
   const { data: fieldsData } = await supabase
-    .from("spec_template_fields").select("id, name, field_type, order_index")
+    .from("library_template_fields").select("id, name, field_type, order_index")
     .eq("template_id", spec.template_id).order("order_index");
 
   // Field values
-  const { data: valuesData } = await supabase.from("spec_field_values").select("*").eq("spec_id", id);
+  const { data: valuesData } = await supabase.from("library_item_field_values").select("*").eq("library_item_id", id);
   const valueMap: Record<string, string> = Object.fromEntries(
     (valuesData ?? []).filter((v) => v.value != null).map((v) => [v.template_field_id, v.value!])
   );
 
   // Tags
-  const { data: tagsData } = await supabase.from("spec_tags").select("tag").eq("spec_id", id);
+  const { data: tagsData } = await supabase.from("library_item_tags").select("tag").eq("library_item_id", id);
   const tags: string[] = (tagsData ?? []).map((t) => t.tag);
 
   // Suppliers via junction
   const { data: specSupData } = await supabase
-    .from("spec_suppliers").select("supplier_id, supplier_code, unit_cost").eq("spec_id", id);
+    .from("library_item_suppliers").select("supplier_id, supplier_code, unit_cost").eq("library_item_id", id);
   const supplierIds = (specSupData ?? []).map((s) => s.supplier_id);
   let suppliers: SpecDetailData["suppliers"] = [];
   if (supplierIds.length > 0) {
@@ -394,7 +394,7 @@ export async function getSpecDetail(id: string): Promise<SpecDetailData | null> 
   const { data: projectSpecData } = await supabase
     .from("project_options")
     .select("project_id")
-    .eq("spec_id", id);
+    .eq("library_item_id", id);
 
   const directProjectIds = (projectSpecData ?? [])
     .map((p) => p.project_id)
@@ -411,7 +411,7 @@ export async function getSpecDetail(id: string): Promise<SpecDetailData | null> 
   let variantSiblings: SpecDetailData["variantSiblings"] = [];
   if (spec.variant_group_id) {
     const { data: siblingsData } = await supabase
-      .from("specs")
+      .from("library_items")
       .select("id, name, image_url, code")
       .eq("studio_id", spec.studio_id)
       .eq("variant_group_id", spec.variant_group_id)
@@ -428,7 +428,7 @@ export async function getSpecDetail(id: string): Promise<SpecDetailData | null> 
     spec: {
       id: spec.id, name: spec.name, code: spec.code ?? null, description: spec.description ?? null,
       image_url: spec.image_url ?? null, source_url: spec.source_url ?? null,
-      global_spec_id: spec.global_spec_id ?? null, variant_group_id: spec.variant_group_id ?? null,
+      product_library_id: spec.product_library_id ?? null, variant_group_id: spec.variant_group_id ?? null,
       template_id: spec.template_id, category_id: spec.category_id ?? null,
       cost_from: spec.cost_from ?? null, cost_to: spec.cost_to ?? null,
       cost_unit: spec.cost_unit ?? null, created_at: spec.created_at,
@@ -455,7 +455,7 @@ export async function deleteSpec(specId: string): Promise<{ error?: string }> {
 
   // Verify ownership — only delete specs belonging to this studio
   const { data: spec } = await supabase
-    .from("specs")
+    .from("library_items")
     .select("id")
     .eq("id", specId)
     .eq("studio_id", studioId)
@@ -466,7 +466,7 @@ export async function deleteSpec(specId: string): Promise<{ error?: string }> {
   const { count } = await supabase
     .from("project_options")
     .select("*", { count: "exact", head: true })
-    .eq("spec_id", specId);
+    .eq("library_item_id", specId);
 
   if (count && count > 0) {
     return {
@@ -476,12 +476,12 @@ export async function deleteSpec(specId: string): Promise<{ error?: string }> {
 
   // Delete related rows first (in case DB doesn't cascade)
   await Promise.all([
-    supabase.from("spec_field_values").delete().eq("spec_id", specId),
-    supabase.from("spec_tags").delete().eq("spec_id", specId),
-    supabase.from("spec_suppliers").delete().eq("spec_id", specId),
+    supabase.from("library_item_field_values").delete().eq("library_item_id", specId),
+    supabase.from("library_item_tags").delete().eq("library_item_id", specId),
+    supabase.from("library_item_suppliers").delete().eq("library_item_id", specId),
   ]);
 
-  const { error } = await supabase.from("specs").delete().eq("id", specId);
+  const { error } = await supabase.from("library_items").delete().eq("id", specId);
   if (error) return { error: "Failed to delete spec." };
 
   revalidatePath("/specs");
@@ -523,7 +523,7 @@ export async function addSpecToProjectFromLibrary(
 
   // Verify spec belongs to this studio
   const { data: spec } = await supabase
-    .from("specs").select("id").eq("id", specId).eq("studio_id", studioId).single();
+    .from("library_items").select("id").eq("id", specId).eq("studio_id", studioId).single();
   if (!spec) return { error: "Spec not found." };
 
   // Verify project belongs to this studio
@@ -534,7 +534,7 @@ export async function addSpecToProjectFromLibrary(
   const { error: dbError } = await supabase.from("project_options").insert({
     project_id: projectId,
     studio_id: studioId,
-    spec_id: specId,
+    library_item_id: specId,
     status: "draft",
   });
 

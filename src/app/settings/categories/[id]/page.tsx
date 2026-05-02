@@ -12,7 +12,7 @@ import { createClient } from "@/lib/supabase/server";
 import { getCurrentStudioId } from "@/lib/studio-context";
 import AppShell from "@/components/AppShell";
 import FieldsClient from "./FieldsClient";
-import type { SpecTemplateFieldRow } from "@/types/database";
+import type { LibraryTemplateFieldRow } from "@/types/database";
 
 interface PageProps {
   params: Promise<{ id: string }>;
@@ -29,7 +29,7 @@ export default async function CategoryFieldsPage({ params }: PageProps) {
 
   // Fetch the category
   const { data: catData } = await supabase
-    .from("spec_categories")
+    .from("library_categories")
     .select("*")
     .eq("id", categoryId)
     .eq("studio_id", studioId)
@@ -41,7 +41,7 @@ export default async function CategoryFieldsPage({ params }: PageProps) {
   let templateId = catData.template_id;
   if (!templateId) {
     const { data: newTemplate } = await supabase
-      .from("spec_templates")
+      .from("library_templates")
       .insert({ studio_id: studioId, name: catData.name, is_active: true })
       .select("id")
       .single();
@@ -49,7 +49,7 @@ export default async function CategoryFieldsPage({ params }: PageProps) {
     if (newTemplate) {
       templateId = newTemplate.id;
       await supabase
-        .from("spec_categories")
+        .from("library_categories")
         .update({ template_id: templateId })
         .eq("id", categoryId);
     }
@@ -59,7 +59,7 @@ export default async function CategoryFieldsPage({ params }: PageProps) {
 
   // Fetch the template fields
   const { data: fieldsData } = await supabase
-    .from("spec_template_fields")
+    .from("library_template_fields")
     .select("*")
     .eq("template_id", templateId)
     .order("order_index");
@@ -70,7 +70,7 @@ export default async function CategoryFieldsPage({ params }: PageProps) {
   let parentName: string | null = null;
   if (catData.parent_id) {
     const { data: parentData } = await supabase
-      .from("spec_categories").select("name").eq("id", catData.parent_id).single();
+      .from("library_categories").select("name").eq("id", catData.parent_id).single();
     parentName = parentData?.name ?? null;
   }
 

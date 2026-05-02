@@ -30,15 +30,15 @@ async function getProjectGuard(projectId: string) {
 
 export async function addSpecToProject(
   projectId: string,
-  payload: { spec_id: string }
+  payload: { library_item_id: string }
 ): Promise<{ error: string | null }> {
   const { error, supabase, studioId } = await getProjectGuard(projectId);
   if (error || !supabase || !studioId) return { error: error ?? "Not authorised." };
 
   const { data: spec } = await supabase
-    .from("specs")
+    .from("library_items")
     .select("id")
-    .eq("id", payload.spec_id)
+    .eq("id", payload.library_item_id)
     .eq("studio_id", studioId)
     .single();
 
@@ -49,7 +49,7 @@ export async function addSpecToProject(
     .from("project_options")
     .select("id")
     .eq("project_id", projectId)
-    .eq("spec_id", payload.spec_id)
+    .eq("library_item_id", payload.library_item_id)
     .maybeSingle();
 
   if (existing) return { error: null }; // already in project — not an error
@@ -57,7 +57,7 @@ export async function addSpecToProject(
   const { error: dbError } = await supabase.from("project_options").insert({
     project_id: projectId,
     studio_id: studioId,
-    spec_id: payload.spec_id,
+    library_item_id: payload.library_item_id,
     notes: null,
     status: "draft",
   });
@@ -80,10 +80,10 @@ export async function removeSpecFromProject(
   const { error, supabase, studioId } = await getProjectGuard(projectId);
   if (error || !supabase || !studioId) return { error: error ?? "Not authorised." };
 
-  // Fetch the spec_id before deleting so we can remove shapes from canvases.
+  // Fetch the library_item_id before deleting so we can remove shapes from canvases.
   const { data: option } = await supabase
     .from("project_options")
-    .select("spec_id")
+    .select("library_item_id")
     .eq("id", projectSpecId)
     .eq("studio_id", studioId)
     .single();
@@ -97,8 +97,8 @@ export async function removeSpecFromProject(
   if (dbError) return { error: dbError.message };
 
   // Remove all spec-card shapes with this specId from every canvas in the project.
-  if (option?.spec_id) {
-    const specId = option.spec_id;
+  if (option?.library_item_id) {
+    const specId = option.library_item_id;
     const { data: canvases } = await supabase
       .from("project_canvases")
       .select("id, content")

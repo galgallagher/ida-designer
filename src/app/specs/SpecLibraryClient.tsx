@@ -8,7 +8,7 @@ import {
   Layers, Lightbulb, Scissors, Grid3x3, Hammer, Paintbrush,
   Droplets, Key, Armchair, Square, Store,
 } from "lucide-react";
-import type { SpecCategoryRow } from "@/types/database";
+import type { LibraryCategoryRow } from "@/types/database";
 import { getCategoryLabel } from "@/lib/categories";
 import SpecDetailModal from "./SpecDetailModal";
 
@@ -35,7 +35,7 @@ export interface EnrichedSpec {
 
 interface SpecLibraryClientProps {
   specs: EnrichedSpec[];
-  categories: SpecCategoryRow[];
+  categories: LibraryCategoryRow[];
   allSuppliers: { id: string; name: string; website: string | null }[];
 }
 
@@ -528,7 +528,7 @@ export default function SpecLibraryClient({ specs, categories, allSuppliers }: S
 
 // ── SpecCard (grid) ────────────────────────────────────────────────────────────
 
-function SpecCard({ spec, onOpen, categories }: { spec: EnrichedSpec; onOpen: (id: string) => void; categories: SpecCategoryRow[] }) {
+function SpecCard({ spec, onOpen, categories }: { spec: EnrichedSpec; onOpen: (id: string) => void; categories: LibraryCategoryRow[] }) {
   const catLabel = getCategoryLabel(spec.category_id, categories);
   return (
     <button
@@ -702,7 +702,7 @@ function SupplierCategoryView({
   onOpenSpec,
 }: {
   specs: EnrichedSpec[];
-  categories: SpecCategoryRow[];
+  categories: LibraryCategoryRow[];
   supplier: DrillSupplier;
   onSelectCategory: (cat: DrillCategory) => void;
   onOpenSpec: (id: string) => void;
@@ -824,9 +824,9 @@ function SupplierCategoryView({
   );
 }
 
-// ── SpecRowItem (list) — renamed to avoid clash with HTML SpecRow ─────────────
+// ── SpecRowItem (list) — local row component for the library list view ───────────────
 
-function SpecRowItem({ spec, onOpen, categories }: { spec: EnrichedSpec; onOpen: (id: string) => void; categories: SpecCategoryRow[] }) {
+function SpecRowItem({ spec, onOpen, categories }: { spec: EnrichedSpec; onOpen: (id: string) => void; categories: LibraryCategoryRow[] }) {
   const catLabel = getCategoryLabel(spec.category_id, categories);
   return (
     <button

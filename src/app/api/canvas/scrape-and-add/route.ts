@@ -68,9 +68,9 @@ export async function POST(req: Request) {
   if (scrapeResult.already_exists) {
     // Already in the studio library — return spec data for the canvas card.
     const { data: fullSpec } = await supabase
-      .from("specs")
-      .select("code, category:spec_categories(name)")
-      .eq("id", scrapeResult.spec_id ?? "")
+      .from("library_items")
+      .select("code, category:library_categories(name)")
+      .eq("id", scrapeResult.library_item_id ?? "")
       .single();
 
     const categoryName = Array.isArray(fullSpec?.category)
@@ -78,10 +78,10 @@ export async function POST(req: Request) {
       : (fullSpec?.category as { name?: string } | null)?.name ?? null;
 
     // Add to project options (ignore if already there)
-    await addToProjectOptions(supabase, scrapeResult.spec_id!, project_id, studioId);
+    await addToProjectOptions(supabase, scrapeResult.library_item_id!, project_id, studioId);
 
     return NextResponse.json({
-      spec_id: scrapeResult.spec_id,
+      library_item_id: scrapeResult.library_item_id,
       name: scrapeResult.spec_name,
       code: fullSpec?.code ?? null,
       category_name: categoryName,
@@ -108,7 +108,7 @@ export async function POST(req: Request) {
       source_url: url,
       field_values: scrapeResult.field_values ?? [],
       supplier_id: scrapeResult.supplier_id ?? null,
-      global_spec_id: scrapeResult.global_spec_id ?? null,
+      product_library_id: scrapeResult.product_library_id ?? null,
       from_global: scrapeResult.from_global ?? false,
       brand_domain: scrapeResult.brand_domain ?? null,
       variant_group_id: scrapeResult.variant_group_id ?? null,
@@ -129,7 +129,7 @@ export async function POST(req: Request) {
   let categoryName: string | null = null;
   if (scrapeResult.category_id) {
     const { data: cat } = await supabase
-      .from("spec_categories")
+      .from("library_categories")
       .select("name")
       .eq("id", scrapeResult.category_id)
       .maybeSingle();
@@ -137,7 +137,7 @@ export async function POST(req: Request) {
   }
 
   return NextResponse.json({
-    spec_id: saved.id,
+    library_item_id: saved.id,
     name: saved.name,
     brand: scrapeResult.brand ?? null,
     code: scrapeResult.code ?? null,
@@ -158,7 +158,7 @@ async function addToProjectOptions(supabase: any, specId: string, projectId: str
   await supabase.from("project_options").insert({
     project_id: projectId,
     studio_id: studioId,
-    spec_id: specId,
+    library_item_id: specId,
     status: "draft",
   });
   // Ignore errors — unique constraint means it's already in the project, which is fine.
@@ -168,10 +168,10 @@ async function addToProjectOptions(supabase: any, specId: string, projectId: str
 
 interface ScrapeResult {
   already_exists?: boolean;
-  spec_id?: string;
+  library_item_id?: string;
   spec_name?: string;
   from_global?: boolean;
-  global_spec_id?: string | null;
+  product_library_id?: string | null;
   name: string;
   code?: string | null;
   brand?: string | null;
@@ -217,7 +217,7 @@ async function scrapeUrl(rawUrl: string, studioId: string, supabase: any): Promi
 
   // ── Check if already in studio library ────────────────────────────────────
   const { data: existing } = await supabase
-    .from("specs")
+    .from("library_items")
     .select("id, name, image_url")
     .eq("studio_id", studioId)
     .eq("source_url", cleanUrl)
@@ -227,7 +227,7 @@ async function scrapeUrl(rawUrl: string, studioId: string, supabase: any): Promi
   if (existing) {
     return {
       already_exists: true,
-      spec_id: existing.id,
+      library_item_id: existing.id,
       spec_name: existing.name,
       image_url: existing.image_url,
       name: existing.name,
@@ -236,7 +236,7 @@ async function scrapeUrl(rawUrl: string, studioId: string, supabase: any): Promi
 
   // ── Check global library ──────────────────────────────────────────────────
   const { data: globalSpec } = await supabase
-    .from("global_specs")
+    .from("product_library")
     .select("id, name, code, brand_name, brand_domain, description, image_url, cost_from, cost_to, cost_unit, category_hint")
     .eq("source_url", cleanUrl)
     .limit(1)
@@ -245,13 +245,13 @@ async function scrapeUrl(rawUrl: string, studioId: string, supabase: any): Promi
   if (globalSpec) {
     // Load global fields
     const { data: globalFields } = await supabase
-      .from("global_spec_fields")
+      .from("product_library_fields")
       .select("label, value")
-      .eq("global_spec_id", globalSpec.id);
+      .eq("product_library_id", globalSpec.id);
 
     return {
       from_global: true,
-      global_spec_id: globalSpec.id,
+      product_library_id: globalSpec.id,
       name: globalSpec.name,
       code: globalSpec.code,
       brand: globalSpec.brand_name,
@@ -402,7 +402,7 @@ ${content}`,
   let categoryId: string | null = null;
   if (extracted.category_suggestion) {
     const { data: categories } = await supabase
-      .from("spec_categories")
+      .from("library_categories")
       .select("id, name")
       .eq("studio_id", studioId)
       .is("parent_id", null);
@@ -418,7 +418,7 @@ ${content}`,
   try {
     const domain = new URL(cleanUrl).hostname.replace(/^www\./, "");
     const { data: gs } = await supabase
-      .from("global_specs")
+      .from("product_library")
       .upsert(
         {
           source_url: cleanUrl,
@@ -451,6 +451,6 @@ ${content}`,
     cost_unit: extracted.cost_unit,
     category_id: categoryId,
     tags: extracted.tags,
-    global_spec_id: globalSpecId,
+    product_library_id: globalSpecId,
   };
 }

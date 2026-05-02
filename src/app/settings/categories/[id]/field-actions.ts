@@ -34,7 +34,7 @@ export async function createField(templateId: string, categoryId: string, formDa
 
   // Get next order_index
   const { data: last } = await supabase
-    .from("spec_template_fields")
+    .from("library_template_fields")
     .select("order_index")
     .eq("template_id", templateId)
     .order("order_index", { ascending: false })
@@ -44,7 +44,7 @@ export async function createField(templateId: string, categoryId: string, formDa
   const order_index = (last?.order_index ?? 0) + 1;
 
   const { error: insertError } = await supabase
-    .from("spec_template_fields")
+    .from("library_template_fields")
     .insert({ template_id: templateId, name, field_type, is_required, order_index, ai_hint, options });
 
   if (insertError) {
@@ -75,7 +75,7 @@ export async function updateField(fieldId: string, categoryId: string, formData:
     : null;
 
   const { error: updateError } = await supabase
-    .from("spec_template_fields")
+    .from("library_template_fields")
     .update({ name, field_type, is_required, ai_hint, options })
     .eq("id", fieldId);
 
@@ -95,7 +95,7 @@ export async function deleteField(fieldId: string, categoryId: string): Promise<
   if (error || !supabase) return { error: error ?? "Unknown error." };
 
   const { error: deleteError } = await supabase
-    .from("spec_template_fields")
+    .from("library_template_fields")
     .delete()
     .eq("id", fieldId);
 
@@ -117,7 +117,7 @@ export async function moveField(
   if (error || !supabase) return { error: error ?? "Unknown error." };
 
   const { data: field } = await supabase
-    .from("spec_template_fields")
+    .from("library_template_fields")
     .select("id, order_index")
     .eq("id", fieldId)
     .single();
@@ -125,7 +125,7 @@ export async function moveField(
   if (!field) return { error: "Field not found." };
 
   const { data: sibling } = await supabase
-    .from("spec_template_fields")
+    .from("library_template_fields")
     .select("id, order_index")
     .eq("template_id", templateId)
     .filter("order_index", direction === "up" ? "lt" : "gt", field.order_index)
@@ -135,8 +135,8 @@ export async function moveField(
 
   if (!sibling) return {};
 
-  await supabase.from("spec_template_fields").update({ order_index: sibling.order_index }).eq("id", field.id);
-  await supabase.from("spec_template_fields").update({ order_index: field.order_index }).eq("id", sibling.id);
+  await supabase.from("library_template_fields").update({ order_index: sibling.order_index }).eq("id", field.id);
+  await supabase.from("library_template_fields").update({ order_index: field.order_index }).eq("id", sibling.id);
 
   revalidateAll(categoryId);
   return {};

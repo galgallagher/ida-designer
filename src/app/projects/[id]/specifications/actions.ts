@@ -43,7 +43,7 @@ async function fetchCategoryChainRow(
   id: string,
 ): Promise<CategoryChainRow | null> {
   const res = await supabase
-    .from("spec_categories")
+    .from("library_categories")
     .select("abbreviation, name, parent_id")
     .eq("id", id)
     .eq("studio_id", studioId)
@@ -100,7 +100,7 @@ export async function createSpecCode(
   if (error || !supabase || !studioId) return { error: error ?? "Not authorised.", id: null };
 
   const { data: cat } = await supabase
-    .from("spec_categories")
+    .from("library_categories")
     .select("id")
     .eq("id", categoryId)
     .eq("studio_id", studioId)
@@ -120,7 +120,7 @@ export async function createSpecCode(
       sequence: seq,
       quantity: 1,
       price: null,
-      spec_id: null,
+      library_item_id: null,
       notes: null,
     })
     .select("id")
@@ -142,17 +142,17 @@ export async function updateSpecCode(
     price?: number | null;
     budget?: number | null;
     notes?: string | null;
-    spec_id?: string | null;
+    library_item_id?: string | null;
   },
 ): Promise<{ error: string | null }> {
   const { error, supabase, studioId } = await getProjectGuard(projectId);
   if (error || !supabase || !studioId) return { error: error ?? "Not authorised." };
 
-  if (patch.spec_id) {
+  if (patch.library_item_id) {
     const { data: spec } = await supabase
-      .from("specs")
+      .from("library_items")
       .select("id")
-      .eq("id", patch.spec_id)
+      .eq("id", patch.library_item_id)
       .eq("studio_id", studioId)
       .single();
     if (!spec) return { error: "Spec not found in your library." };
@@ -215,7 +215,7 @@ export async function assignSpecToCode(
       .eq("studio_id", studioId)
       .single(),
     supabase
-      .from("specs")
+      .from("library_items")
       .select("id, category_id")
       .eq("id", specId)
       .eq("studio_id", studioId)
@@ -237,13 +237,13 @@ export async function assignSpecToCode(
     .from("project_options")
     .select("id")
     .eq("project_id", projectId)
-    .eq("spec_id", specId)
+    .eq("library_item_id", specId)
     .maybeSingle();
   if (!existingOption) {
     await supabase.from("project_options").insert({
       project_id: projectId,
       studio_id: studioId,
-      spec_id: specId,
+      library_item_id: specId,
       notes: null,
       status: "draft",
     });
@@ -251,7 +251,7 @@ export async function assignSpecToCode(
 
   const { error: dbError } = await supabase
     .from("project_specs")
-    .update({ spec_id: specId })
+    .update({ library_item_id: specId })
     .eq("id", slotId)
     .eq("studio_id", studioId);
   if (dbError) return { error: dbError.message };
@@ -268,7 +268,7 @@ async function collectCategoryDescendants(
 ): Promise<Set<string>> {
   const result = new Set<string>([rootId]);
   const { data } = await supabase
-    .from("spec_categories")
+    .from("library_categories")
     .select("id, parent_id")
     .eq("studio_id", studioId);
   const all: { id: string; parent_id: string | null }[] = (data ?? []) as { id: string; parent_id: string | null }[];
@@ -297,12 +297,12 @@ export async function unassignCode(
   reset: { quantity?: boolean; price?: boolean; budget?: boolean; notes?: boolean } = {},
 ): Promise<{ error: string | null }> {
   const patch: {
-    spec_id: null;
+    library_item_id: null;
     quantity?: number;
     price?: number | null;
     budget?: number | null;
     notes?: string | null;
-  } = { spec_id: null };
+  } = { library_item_id: null };
   if (reset.quantity) patch.quantity = 1;
   if (reset.price)    patch.price    = null;
   if (reset.budget)   patch.budget   = null;
@@ -327,7 +327,7 @@ export async function getScheduleContextForSpec(
   }
 
   const { data: spec } = await supabase
-    .from("specs")
+    .from("library_items")
     .select("id, name, category_id")
     .eq("id", specId)
     .eq("studio_id", studioId)
@@ -341,7 +341,7 @@ export async function getScheduleContextForSpec(
     .select("code")
     .eq("project_id", projectId)
     .eq("studio_id", studioId)
-    .eq("spec_id", specId)
+    .eq("library_item_id", specId)
     .order("sequence");
   const assignedCodes = (assignedRows ?? []).map((r) => r.code);
 
@@ -352,7 +352,7 @@ export async function getScheduleContextForSpec(
   // Collect spec's category + ancestor chain — a spec fits a slot in its own
   // category or any ancestor (e.g. Linen spec → Fabric slot).
   const { data: allCats } = await supabase
-    .from("spec_categories")
+    .from("library_categories")
     .select("id, parent_id")
     .eq("studio_id", studioId);
   const parentMap = new Map<string, string | null>();
@@ -371,7 +371,7 @@ export async function getScheduleContextForSpec(
     .select("id, code, category_id")
     .eq("project_id", projectId)
     .eq("studio_id", studioId)
-    .is("spec_id", null)
+    .is("library_item_id", null)
     .order("sequence");
 
   const eligibleEmptySlots = (slots ?? [])
@@ -391,16 +391,16 @@ export async function getScheduleCodesForProject(
 
   const { data } = await supabase
     .from("project_specs")
-    .select("spec_id, code")
+    .select("library_item_id, code")
     .eq("project_id", projectId)
     .eq("studio_id", studioId)
-    .not("spec_id", "is", null)
+    .not("library_item_id", "is", null)
     .order("sequence");
 
   const out: Record<string, string[]> = {};
   (data ?? []).forEach((r) => {
-    if (!r.spec_id) return;
-    (out[r.spec_id] ??= []).push(r.code);
+    if (!r.library_item_id) return;
+    (out[r.library_item_id] ??= []).push(r.code);
   });
   return out;
 }
@@ -418,7 +418,7 @@ export async function addSpecToSchedule(
   if (error || !supabase || !studioId) return { error: error ?? "Not authorised.", slotId: null, code: null };
 
   const { data: spec } = await supabase
-    .from("specs")
+    .from("library_items")
     .select("id, category_id")
     .eq("id", specId)
     .eq("studio_id", studioId)
@@ -432,13 +432,13 @@ export async function addSpecToSchedule(
     .from("project_options")
     .select("id")
     .eq("project_id", projectId)
-    .eq("spec_id", specId)
+    .eq("library_item_id", specId)
     .maybeSingle();
   if (!existingOption) {
     await supabase.from("project_options").insert({
       project_id: projectId,
       studio_id: studioId,
-      spec_id: specId,
+      library_item_id: specId,
       notes: null,
       status: "draft",
     });
@@ -459,7 +459,7 @@ export async function addSpecToSchedule(
       sequence: seq,
       quantity: 1,
       price: null,
-      spec_id: specId,
+      library_item_id: specId,
       notes: null,
     })
     .select("id")

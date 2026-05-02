@@ -172,10 +172,10 @@ export async function getProjectSpecsForPicker(projectId: string): Promise<SpecL
 
   const { data } = await supabase
     .from("project_options")
-    .select("specs(id, name, image_url, spec_categories(name))")
+    .select("specs(id, name, image_url, library_categories(name))")
     .eq("project_id", projectId)
     .eq("studio_id", studioId)
-    .not("spec_id", "is", null);
+    .not("library_item_id", "is", null);
 
   if (!data) return [];
 
@@ -187,7 +187,7 @@ export async function getProjectSpecsForPicker(projectId: string): Promise<SpecL
       id: spec.id,
       name: spec.name,
       image_url: spec.image_url ?? null,
-      category: spec.spec_categories?.name ?? null,
+      category: spec.library_categories?.name ?? null,
     }];
   });
 }

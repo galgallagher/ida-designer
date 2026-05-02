@@ -62,8 +62,15 @@ Fonts:         Playfair Display (headings), Inter (UI)
 Shadow:        0 2px 12px rgba(26,26,26,0.08)
 ```
 
+### Library / Product / Sourcing model (ADR 031)
+The studio's **library** lives in `library_items` (formerly `specs`). Each row is either a **sourced product** (has `product_library_id` → canonical row in `product_library`, formerly `global_specs`) or a **finish** (`product_library_id IS NULL`, data lives directly on the row).
+
+Read pattern for sourced items: `COALESCE(library_items.name_override, product_library.name)`. Override columns (`name_override`, `image_url_override`, etc.) let studios customise without forking the canonical row.
+
+Renamed tables (migration 054): `specs → library_items`, `spec_field_values → library_item_field_values`, `spec_tags → library_item_tags`, `spec_suppliers → library_item_suppliers`, `spec_categories → library_categories`, `spec_templates → library_templates`, `spec_template_fields → library_template_fields`, `global_specs* → product_library*`. FK columns: `spec_id → library_item_id`, `global_spec_id → product_library_id`.
+
 ### Project Options & Canvas
-Project Options (`/projects/[id]/options`) uses `project_options` table — one spec per project, unique constraint. Sub-navigation lives inside `ProjectNav` as inline items (not a separate sidebar panel). See ADR 023.
+Project Options (`/projects/[id]/options`) uses `project_options` table — one library item per project, unique constraint. Sub-navigation lives inside `ProjectNav` as inline items (not a separate sidebar panel). See ADR 023.
 
 Canvas images (`CanvasImageShape`) and spec cards (`SpecCardShape`) are distinct custom tldraw shapes — do not conflate them. See ADR 018.
 

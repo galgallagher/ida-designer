@@ -29,13 +29,13 @@ export default async function ProjectOptionsPage({ params, searchParams }: PageP
         .single(),
       supabase
         .from("project_options")
-        .select("id, spec_id, notes, status, created_at")
+        .select("id, library_item_id, notes, status, created_at")
         .eq("project_id", projectId)
         .eq("studio_id", studioId)
-        .not("spec_id", "is", null)
+        .not("library_item_id", "is", null)
         .order("created_at"),
       supabase
-        .from("specs")
+        .from("library_items")
         .select("id, name, code, image_url, cost_from, cost_to, cost_unit, category_id")
         .eq("studio_id", studioId)
         .order("name"),
@@ -47,7 +47,7 @@ export default async function ProjectOptionsPage({ params, searchParams }: PageP
         .order("created_at", { ascending: false }),
       supabase
         .from("project_specs")
-        .select("id, spec_id, code, sequence, category_id")
+        .select("id, library_item_id, code, sequence, category_id")
         .eq("project_id", projectId)
         .eq("studio_id", studioId)
         .order("sequence"),
@@ -61,7 +61,7 @@ export default async function ProjectOptionsPage({ params, searchParams }: PageP
   const catMap = new Map<string, string>();
   if (catIds.length > 0) {
     const { data: cats } = await supabase
-      .from("spec_categories")
+      .from("library_categories")
       .select("id, name")
       .in("id", catIds);
     (cats ?? []).forEach((c) => catMap.set(c.id, c.name));
@@ -80,17 +80,17 @@ export default async function ProjectOptionsPage({ params, searchParams }: PageP
   }));
 
   const alreadyAddedIds = new Set(
-    (projectSpecsResult.data ?? []).map((r) => r.spec_id).filter((id): id is string => id !== null),
+    (projectSpecsResult.data ?? []).map((r) => r.library_item_id).filter((id): id is string => id !== null),
   );
 
   // Build map of specId → schedule codes assigned to it.
   const scheduleCodesBySpec: Record<string, string[]> = {};
   const emptySlots: { id: string; code: string; category_id: string }[] = [];
   (scheduleSlotsResult.data ?? []).forEach((row) => {
-    if (row.spec_id) {
-      const list = scheduleCodesBySpec[row.spec_id] ?? [];
+    if (row.library_item_id) {
+      const list = scheduleCodesBySpec[row.library_item_id] ?? [];
       list.push(row.code);
-      scheduleCodesBySpec[row.spec_id] = list;
+      scheduleCodesBySpec[row.library_item_id] = list;
     } else {
       emptySlots.push({ id: row.id, code: row.code, category_id: row.category_id });
     }
@@ -99,7 +99,7 @@ export default async function ProjectOptionsPage({ params, searchParams }: PageP
   // Fetch all categories so the client can map slot category_id → descendants
   // (a spec can be assigned to a slot in its own category or any ancestor).
   const { data: allCats } = await supabase
-    .from("spec_categories")
+    .from("library_categories")
     .select("id, name, parent_id")
     .eq("studio_id", studioId)
     .eq("is_active", true);

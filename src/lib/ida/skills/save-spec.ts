@@ -21,7 +21,7 @@ type SaveSpecParams = {
   cost_unit: string | null;
   tags: string[];
   source_url: string | null;
-  global_spec_id: string | null;
+  product_library_id: string | null;
 };
 
 export const saveSpecTool = () =>
@@ -40,11 +40,11 @@ export const saveSpecTool = () =>
         cost_unit: { type: ["string", "null"], description: "e.g. 'per m²'" },
         tags: { type: "array", items: { type: "string" }, description: "Tags for the spec" },
         source_url: { type: ["string", "null"], description: "The original product URL" },
-        global_spec_id: { type: ["string", "null"], description: "UUID of the global spec if sourced from the global library" },
+        product_library_id: { type: ["string", "null"], description: "UUID of the global spec if sourced from the global library" },
       },
       required: ["name", "tags"],
     }),
-    execute: async ({ name, description, category_id, image_url, cost_from, cost_to, cost_unit, tags, source_url, global_spec_id }: SaveSpecParams) => {
+    execute: async ({ name, description, category_id, image_url, cost_from, cost_to, cost_unit, tags, source_url, product_library_id }: SaveSpecParams) => {
       const supabase = await createClient();
       const studioId = await getCurrentStudioId();
 
@@ -54,7 +54,7 @@ export const saveSpecTool = () =>
       if (!templateId) return { error: "Could not find or create a spec template." };
 
       const { data: spec, error: specError } = await supabase
-        .from("specs")
+        .from("library_items")
         .insert({
           studio_id: studioId,
           template_id: templateId,
@@ -65,7 +65,7 @@ export const saveSpecTool = () =>
           cost_from: cost_from ?? null,
           cost_to: cost_to ?? null,
           cost_unit: cost_unit ?? null,
-          global_spec_id: global_spec_id ?? null,
+          product_library_id: product_library_id ?? null,
         })
         .select("id, name")
         .single();
@@ -77,14 +77,14 @@ export const saveSpecTool = () =>
 
       const allTags = [...tags, ...visualTags];
       if (allTags.length > 0) {
-        await supabase.from("spec_tags").insert(
-          allTags.map((tag: string) => ({ spec_id: spec.id, tag }))
+        await supabase.from("library_item_tags").insert(
+          allTags.map((tag: string) => ({ library_item_id: spec.id, tag }))
         );
       }
 
       if (source_url) {
         try {
-          await supabase.from("spec_tags").insert({ spec_id: spec.id, tag: `source:${source_url}` });
+          await supabase.from("library_item_tags").insert({ library_item_id: spec.id, tag: `source:${source_url}` });
         } catch { /* best-effort */ }
       }
 

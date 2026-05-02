@@ -49,10 +49,10 @@ export default async function ProjectLayout({ children, params }: LayoutProps) {
       .single<ProjectWithClient>(),
     supabase
       .from("project_options")
-      .select("specs(spec_categories(name))")
+      .select("specs(library_categories(name))")
       .eq("project_id", id)
       .eq("studio_id", currentStudioId ?? "")
-      .not("spec_id", "is", null),
+      .not("library_item_id", "is", null),
     supabase
       .from("project_images")
       .select("type")
@@ -69,7 +69,7 @@ export default async function ProjectLayout({ children, params }: LayoutProps) {
   const catCounts = new Map<string, number>();
   (optionsRes.data ?? []).forEach((o) => {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const name = (o as any).specs?.spec_categories?.name as string | undefined;
+    const name = (o as any).specs?.library_categories?.name as string | undefined;
     if (name) catCounts.set(name, (catCounts.get(name) ?? 0) + 1);
   });
   const optionCategories = Array.from(catCounts.entries())

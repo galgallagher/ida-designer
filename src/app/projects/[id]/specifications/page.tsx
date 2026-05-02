@@ -29,13 +29,13 @@ export default async function SpecificationsPage({ params }: PageProps) {
       .single(),
     supabase
       .from("project_specs")
-      .select("id, code, sequence, quantity, price, budget, spec_id, notes, category_id, created_at")
+      .select("id, code, sequence, quantity, price, budget, library_item_id, notes, category_id, created_at")
       .eq("project_id", projectId)
       .eq("studio_id", studioId)
       .order("category_id")
       .order("sequence"),
     supabase
-      .from("spec_categories")
+      .from("library_categories")
       .select("id, name, abbreviation, parent_id, sort_order, is_active")
       .eq("studio_id", studioId)
       .eq("is_active", true)
@@ -51,16 +51,16 @@ export default async function SpecificationsPage({ params }: PageProps) {
   // Fetch all studio specs (for the picker) and project options for this project.
   const [{ data: librarySpecsRaw }, { data: optionRows }] = await Promise.all([
     supabase
-      .from("specs")
+      .from("library_items")
       .select("id, name, image_url, code, category_id")
       .eq("studio_id", studioId)
       .order("name"),
     supabase
       .from("project_options")
-      .select("spec_id")
+      .select("library_item_id")
       .eq("project_id", projectId)
       .eq("studio_id", studioId)
-      .not("spec_id", "is", null),
+      .not("library_item_id", "is", null),
   ]);
 
   const librarySpecs = (librarySpecsRaw ?? []).map((s) => ({
@@ -73,7 +73,7 @@ export default async function SpecificationsPage({ params }: PageProps) {
 
   const optionSpecIds = new Set(
     (optionRows ?? [])
-      .map((o) => o.spec_id)
+      .map((o) => o.library_item_id)
       .filter((id): id is string => !!id),
   );
 
@@ -94,7 +94,7 @@ export default async function SpecificationsPage({ params }: PageProps) {
         budget: s.budget === null ? null : Number(s.budget),
         notes: s.notes,
         category_id: s.category_id,
-        spec: s.spec_id ? specMap.get(s.spec_id) ?? null : null,
+        spec: s.library_item_id ? specMap.get(s.library_item_id) ?? null : null,
       }))}
       categories={categories.map((c) => ({
         id: c.id,

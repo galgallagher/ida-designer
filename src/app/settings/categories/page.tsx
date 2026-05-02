@@ -11,7 +11,7 @@ import { createClient } from "@/lib/supabase/server";
 import { getCurrentStudioId } from "@/lib/studio-context";
 import AppShell from "@/components/AppShell";
 import CategoriesClient from "./CategoriesClient";
-import type { SpecCategoryRow, SpecTemplateFieldRow } from "@/types/database";
+import type { LibraryCategoryRow, LibraryTemplateFieldRow } from "@/types/database";
 
 export default async function CategoriesPage() {
   const supabase = await createClient();
@@ -23,7 +23,7 @@ export default async function CategoriesPage() {
 
   // Fetch all categories for this studio (active + inactive)
   const { data: categoriesData } = await supabase
-    .from("spec_categories")
+    .from("library_categories")
     .select("*")
     .eq("studio_id", studioId)
     .order("sort_order");
@@ -36,7 +36,7 @@ export default async function CategoriesPage() {
 
   if (categoryIds.length > 0) {
     const { data: specs } = await supabase
-      .from("specs").select("category_id").eq("studio_id", studioId)
+      .from("library_items").select("category_id").eq("studio_id", studioId)
       .in("category_id", categoryIds);
 
     for (const spec of specs ?? []) {
@@ -49,11 +49,11 @@ export default async function CategoriesPage() {
   // Fetch ALL template fields for all templates belonging to this studio
   // (passed to client so the panel can show them instantly without a round-trip)
   const templateIds = categories.map((c) => c.template_id).filter(Boolean) as string[];
-  let allFields: SpecTemplateFieldRow[] = [];
+  let allFields: LibraryTemplateFieldRow[] = [];
 
   if (templateIds.length > 0) {
     const { data: fieldsData } = await supabase
-      .from("spec_template_fields")
+      .from("library_template_fields")
       .select("*")
       .in("template_id", templateIds)
       .order("order_index");

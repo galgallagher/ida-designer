@@ -23,7 +23,7 @@ export async function resolveTemplateId(
   //    e.g. "Seating" has no template_id, but its parent "Furniture" does
   if (categoryId) {
     const { data: cat } = await supabase
-      .from("spec_categories")
+      .from("library_categories")
       .select("template_id, parent_id")
       .eq("id", categoryId)
       .single();
@@ -32,7 +32,7 @@ export async function resolveTemplateId(
     // Sub-category: check parent
     if (cat?.parent_id) {
       const { data: parent } = await supabase
-        .from("spec_categories")
+        .from("library_categories")
         .select("template_id")
         .eq("id", cat.parent_id)
         .single();
@@ -42,7 +42,7 @@ export async function resolveTemplateId(
 
   // 2. Studio's first active template
   const { data: templates } = await supabase
-    .from("spec_templates")
+    .from("library_templates")
     .select("id")
     .eq("studio_id", studioId)
     .eq("is_active", true)
@@ -52,7 +52,7 @@ export async function resolveTemplateId(
 
   // 3. Create a General template as last resort
   const { data: created } = await supabase
-    .from("spec_templates")
+    .from("library_templates")
     .insert({ studio_id: studioId, name: "General", is_active: true })
     .select("id")
     .single();

@@ -6,7 +6,7 @@ import {
   HelpCircle, GripVertical,
 } from "lucide-react";
 import { createField, updateField, deleteField, moveField } from "./field-actions";
-import type { SpecTemplateFieldRow, FieldType } from "@/types/database";
+import type { LibraryTemplateFieldRow, FieldType } from "@/types/database";
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
@@ -26,12 +26,12 @@ interface FieldsClientProps {
   categoryId: string;
   categoryName: string;
   templateId: string;
-  fields: SpecTemplateFieldRow[];
+  fields: LibraryTemplateFieldRow[];
 }
 
 type ModalState =
   | { mode: "add" }
-  | { mode: "edit"; field: SpecTemplateFieldRow };
+  | { mode: "edit"; field: LibraryTemplateFieldRow };
 
 // ── Component ─────────────────────────────────────────────────────────────────
 

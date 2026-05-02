@@ -21,7 +21,7 @@ import SpecDetailModal from "@/app/specs/SpecDetailModal";
 
 interface AlreadyExistsResult {
   already_exists: true;
-  spec_id: string;
+  library_item_id: string;
   spec_name: string;
   spec_url: string;
 }
@@ -105,7 +105,7 @@ function AlreadyInLibraryCard({
       </div>
       <button
         type="button"
-        onClick={() => onOpenSpec(result.spec_id)}
+        onClick={() => onOpenSpec(result.library_item_id)}
         style={{
           flexShrink: 0,
           height: 30,
@@ -384,7 +384,7 @@ function SpecResultCard({
           source_url: result.source_url ?? null,
           field_values: result.field_values ?? [],
           supplier_id: result.supplier_id ?? null,
-          global_spec_id: (result as { global_spec_id?: string | null }).global_spec_id ?? null,
+          product_library_id: (result as { product_library_id?: string | null }).product_library_id ?? null,
           variant_group_id: result.variant_group_id ?? null,
         }),
       });
@@ -399,7 +399,7 @@ function SpecResultCard({
       if (window.location.pathname.includes("/canvas")) {
         window.dispatchEvent(new CustomEvent("ida:spec-saved", {
           detail: {
-            spec_id: data.id,
+            library_item_id: data.id,
             name: result.name,
             brand: result.brand ?? null,
             code: result.code ?? null,

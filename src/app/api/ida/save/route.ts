@@ -6,7 +6,7 @@
  *
  * Two flows:
  *  1. Fresh scrape  — spec data comes directly from the scrape result
- *  2. Global pin    — spec data comes from global_specs (from_global: true)
+ *  2. Global pin    — spec data comes from product_library (from_global: true)
  *     In the pin flow, global freeform fields are mapped to the studio's
  *     template fields using fuzzy label matching, and global tags are copied.
  *
@@ -40,7 +40,7 @@ export async function POST(req: Request) {
     field_values: { field_id: string; value: string }[] | null;
     supplier_id: string | null;
     // Global library fields
-    global_spec_id: string | null;
+    product_library_id: string | null;
     from_global?: boolean;
     brand_domain?: string | null;
     // Variant grouping
@@ -57,21 +57,21 @@ export async function POST(req: Request) {
   // ── Pin flow: load global fields and map to studio template ───────────────
   // When from_global is true, field_values from the request body may be empty
   // (the scrape tool only returns raw fields, not pre-mapped field_values for
-  // global hits). We load them from global_spec_fields and map them here.
+  // global hits). We load them from product_library_fields and map them here.
   let fieldValues = body.field_values ?? [];
 
-  if (body.from_global && body.global_spec_id && fieldValues.length === 0) {
+  if (body.from_global && body.product_library_id && fieldValues.length === 0) {
     try {
       // Load global freeform fields
       const { data: globalFields } = await supabase
-        .from("global_spec_fields")
+        .from("product_library_fields")
         .select("label, value")
-        .eq("global_spec_id", body.global_spec_id);
+        .eq("product_library_id", body.product_library_id);
 
       if (globalFields && globalFields.length > 0) {
         // Load the studio's template fields for this template
         const { data: templateFields } = await supabase
-          .from("spec_template_fields")
+          .from("library_template_fields")
           .select("id, name, template_id")
           .eq("template_id", templateId);
 
@@ -122,7 +122,7 @@ export async function POST(req: Request) {
 
   // ── Insert spec ────────────────────────────────────────────────────────────
   const { data: spec, error } = await supabase
-    .from("specs")
+    .from("library_items")
     .insert({
       studio_id: studioId,
       template_id: templateId,
@@ -132,7 +132,7 @@ export async function POST(req: Request) {
       description: body.description ?? null,
       image_url: rehostedImageUrl,
       source_url: body.source_url ?? null,
-      global_spec_id: body.global_spec_id ?? null,
+      product_library_id: body.product_library_id ?? null,
       variant_group_id: body.variant_group_id ?? null,
       cost_from: body.cost_from ?? null,
       cost_to: body.cost_to ?? null,
@@ -149,12 +149,12 @@ export async function POST(req: Request) {
   const tags = [...(body.tags ?? []), ...visualTags];
   if (body.source_url) tags.push(`source:${body.source_url}`);
 
-  if (body.from_global && body.global_spec_id) {
+  if (body.from_global && body.product_library_id) {
     try {
       const { data: globalTags } = await supabase
-        .from("global_spec_tags")
+        .from("product_library_tags")
         .select("tag")
-        .eq("global_spec_id", body.global_spec_id);
+        .eq("product_library_id", body.product_library_id);
       (globalTags ?? []).forEach((t) => tags.push(t.tag));
     } catch { /* non-critical */ }
   }
@@ -162,16 +162,16 @@ export async function POST(req: Request) {
   // Deduplicate tags
   const uniqueTags = [...new Set(tags)];
   if (uniqueTags.length > 0) {
-    await supabase.from("spec_tags").insert(uniqueTags.map((tag) => ({ spec_id: spec.id, tag })));
+    await supabase.from("library_item_tags").insert(uniqueTags.map((tag) => ({ library_item_id: spec.id, tag })));
   }
 
   // ── Template field values ──────────────────────────────────────────────────
   if (fieldValues.length > 0) {
-    await supabase.from("spec_field_values").insert(
+    await supabase.from("library_item_field_values").insert(
       fieldValues
         .filter((fv) => fv.field_id && fv.value?.trim())
         .map((fv) => ({
-          spec_id: spec.id,
+          library_item_id: spec.id,
           template_field_id: fv.field_id,
           value: fv.value,
         }))
@@ -180,8 +180,8 @@ export async function POST(req: Request) {
 
   // ── Supplier link ──────────────────────────────────────────────────────────
   if (supplierId) {
-    await supabase.from("spec_suppliers").insert({
-      spec_id: spec.id,
+    await supabase.from("library_item_suppliers").insert({
+      library_item_id: spec.id,
       supplier_id: supplierId,
       supplier_code: null,
       unit_cost: null,

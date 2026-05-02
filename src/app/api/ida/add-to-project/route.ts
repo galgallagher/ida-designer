@@ -4,7 +4,7 @@
  * Adds an existing library spec to a project's default schedule.
  * Called from IdaWidget after a spec is saved, when the user is inside a project.
  *
- * Body: { spec_id: string, project_id: string }
+ * Body: { library_item_id: string, project_id: string }
  */
 
 import { createClient } from "@/lib/supabase/server";
@@ -18,11 +18,11 @@ export async function POST(req: Request) {
   const studioId = await getCurrentStudioId();
   if (!studioId) return Response.json({ error: "No studio context" }, { status: 400 });
 
-  const body = await req.json() as { spec_id?: string; project_id?: string };
-  const { spec_id, project_id } = body;
+  const body = await req.json() as { library_item_id?: string; project_id?: string };
+  const { library_item_id, project_id } = body;
 
-  if (!spec_id || !project_id) {
-    return Response.json({ error: "spec_id and project_id are required" }, { status: 400 });
+  if (!library_item_id || !project_id) {
+    return Response.json({ error: "library_item_id and project_id are required" }, { status: 400 });
   }
 
   // Verify the project belongs to this studio
@@ -37,9 +37,9 @@ export async function POST(req: Request) {
 
   // Verify the spec belongs to this studio
   const { data: spec } = await supabase
-    .from("specs")
+    .from("library_items")
     .select("id")
-    .eq("id", spec_id)
+    .eq("id", library_item_id)
     .eq("studio_id", studioId)
     .single();
 
@@ -50,7 +50,7 @@ export async function POST(req: Request) {
     .from("project_options")
     .select("id")
     .eq("project_id", project_id)
-    .eq("spec_id", spec_id)
+    .eq("library_item_id", library_item_id)
     .maybeSingle();
 
   if (existing) return Response.json({ ok: true, already_in_project: true });
@@ -58,7 +58,7 @@ export async function POST(req: Request) {
   const { error: insertError } = await supabase.from("project_options").insert({
     project_id,
     studio_id: studioId,
-    spec_id,
+    library_item_id,
     status: "draft",
     drawing_id: null,
     notes: null,

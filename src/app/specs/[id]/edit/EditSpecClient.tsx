@@ -6,14 +6,14 @@ import { ArrowLeft, Plus, X, Loader2, Tag, Trash2, ImageIcon } from "lucide-reac
 import { updateSpec, deleteSpec } from "../../actions";
 import type { UpdateSpecResult } from "../../actions";
 import { useRouter } from "next/navigation";
-import type { SpecRow, SpecCategoryRow, SpecTemplateFieldRow } from "@/types/database";
+import type { LibraryItemRow, LibraryCategoryRow, LibraryTemplateFieldRow } from "@/types/database";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
 interface EditSpecClientProps {
-  spec: SpecRow;
-  category: SpecCategoryRow | null;
-  fields: SpecTemplateFieldRow[];
+  spec: LibraryItemRow;
+  category: LibraryCategoryRow | null;
+  fields: LibraryTemplateFieldRow[];
   valueMap: Record<string, string>;
   initialTags: string[];
   existingSupplierJunction: { supplier_id: string; supplier_code: string | null; unit_cost: number | null } | null;

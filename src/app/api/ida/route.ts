@@ -13,7 +13,7 @@
  */
 
 import { streamText } from "ai";
-import { anthropic } from "@ai-sdk/anthropic";
+import { createAnthropic } from "@ai-sdk/anthropic";
 import { createClient } from "@/lib/supabase/server";
 import { getCurrentStudioId } from "@/lib/studio-context";
 import { buildSystemPrompt } from "@/lib/ida/system-prompt";
@@ -33,6 +33,18 @@ export async function POST(req: Request) {
     return new Response("Unauthorised", { status: 401 });
   }
 
+  // ── Anthropic client (explicit key — auto-detection from process.env is
+  // unreliable across Next.js bundling/edge contexts; pass it explicitly so a
+  // missing key fails fast and visibly) ─────────────────────────────────────
+  // Reject empty-string env values too — some shells (e.g. Claude Code's bash)
+  // export ANTHROPIC_API_KEY="" which prevents Next.js from loading the value
+  // from .env.local. Treat empty as missing so the failure is visible.
+  const anthropicKey = process.env.ANTHROPIC_API_KEY?.trim();
+  if (!anthropicKey) {
+    return new Response("ANTHROPIC_API_KEY is not configured", { status: 500 });
+  }
+  const anthropic = createAnthropic({ apiKey: anthropicKey });
+
   // ── Parse request ──────────────────────────────────────────────────────
   const body = await req.json() as {
     messages: { role: string; content: string }[];
@@ -51,7 +63,7 @@ export async function POST(req: Request) {
     const [{ data: studio }, { data: categories }, { data: profile }] = await Promise.all([
       supabase.from("studios").select("name").eq("id", studioId).single(),
       supabase
-        .from("spec_categories")
+        .from("library_categories")
         .select("name")
         .eq("studio_id", studioId)
         .eq("is_active", true)

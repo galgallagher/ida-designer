@@ -11,7 +11,7 @@ import { createClient } from "@/lib/supabase/server";
 import { getCurrentStudioId } from "@/lib/studio-context";
 import AppShell from "@/components/AppShell";
 import NewSpecClient from "./NewSpecClient";
-import type { SpecCategoryRow } from "@/types/database";
+import type { LibraryCategoryRow } from "@/types/database";
 
 export default async function NewSpecPage() {
   const supabase = await createClient();
@@ -20,7 +20,7 @@ export default async function NewSpecPage() {
 
   // Fetch categories
   const { data: categoriesData } = await supabase
-    .from("spec_categories")
+    .from("library_categories")
     .select("*")
     .eq("studio_id", studioId)
     .eq("is_active", true)
@@ -28,7 +28,7 @@ export default async function NewSpecPage() {
 
   // Fetch templates (maps to categories by name — studio's own templates)
   const { data: templatesData } = await supabase
-    .from("spec_templates")
+    .from("library_templates")
     .select("*")
     .eq("studio_id", studioId)
     .eq("is_active", true)
@@ -37,7 +37,7 @@ export default async function NewSpecPage() {
   // Fetch all template fields
   const templates = templatesData ?? [];
   const { data: fieldsData } = await supabase
-    .from("spec_template_fields")
+    .from("library_template_fields")
     .select("*")
     .in("template_id", templates.map((t) => t.id))
     .order("order_index");

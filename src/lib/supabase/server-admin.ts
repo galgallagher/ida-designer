@@ -2,7 +2,7 @@
  * Supabase admin (service_role) client
  *
  * Use this ONLY for server-side operations that need to bypass RLS —
- * specifically, writing to platform-level tables like global_specs that
+ * specifically, writing to platform-level tables like product_library that
  * are read-only for regular users.
  *
  * SECURITY: This key has full database access. Rules:

@@ -410,7 +410,7 @@ export default function SpecDetailModal({ specId, onClose }: Props) {
                 )}
 
                 {/* Global library badge */}
-                {spec?.global_spec_id && (
+                {spec?.product_library_id && (
                   <div style={{
                     display: "inline-flex", alignItems: "center", gap: 4, marginTop: 10,
                     padding: "3px 8px", borderRadius: 6,

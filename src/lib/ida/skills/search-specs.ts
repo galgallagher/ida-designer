@@ -6,8 +6,8 @@
  *
  * Queries across three layers simultaneously:
  *   - specs (name, description) — keyword / brand text match
- *   - spec_tags               — colour, pattern, texture, style tags
- *   - spec_field_values       — width (cm), Martindale, etc.
+ *   - library_item_tags               — colour, pattern, texture, style tags
+ *   - library_item_field_values       — width (cm), Martindale, etc.
  *
  * Results are scored by how many criteria match and returned ranked.
  */
@@ -127,7 +127,7 @@ export const searchSpecsTool = () =>
 
       // ── 1. All studio specs ─────────────────────────────────────────────
       const { data: specs } = await supabase
-        .from("specs")
+        .from("library_items")
         .select(
           "id, name, description, image_url, category_id, cost_from, cost_to, cost_unit"
         )
@@ -145,7 +145,7 @@ export const searchSpecsTool = () =>
 
       // ── 2. Category map (id → name, id → parent_id) ────────────────────
       const { data: categories } = await supabase
-        .from("spec_categories")
+        .from("library_categories")
         .select("id, name, parent_id")
         .eq("studio_id", studioId);
 
@@ -184,16 +184,16 @@ export const searchSpecsTool = () =>
 
       // ── 3. Tags for all specs (exclude internal source: tags) ───────────
       const { data: tagRows } = await supabase
-        .from("spec_tags")
-        .select("spec_id, tag")
-        .in("spec_id", specIds)
+        .from("library_item_tags")
+        .select("library_item_id, tag")
+        .in("library_item_id", specIds)
         .not("tag", "like", "source:%");
 
       const tagsBySpec = new Map<string, string[]>();
       for (const row of tagRows ?? []) {
-        const arr = tagsBySpec.get(row.spec_id) ?? [];
+        const arr = tagsBySpec.get(row.library_item_id) ?? [];
         arr.push(row.tag.toLowerCase());
-        tagsBySpec.set(row.spec_id, arr);
+        tagsBySpec.set(row.library_item_id, arr);
       }
 
       // ── 4. Field values for width / Martindale filtering ───────────────
@@ -207,7 +207,7 @@ export const searchSpecsTool = () =>
 
       if (needsFieldSearch) {
         const { data: studioTemplates } = await supabase
-          .from("spec_templates")
+          .from("library_templates")
           .select("id")
           .eq("studio_id", studioId)
           .eq("is_active", true);
@@ -217,7 +217,7 @@ export const searchSpecsTool = () =>
         if (templateIds.length > 0) {
           // Fetch fields whose names contain "width" or "martindale" / "rub"
           const { data: relevantFields } = await supabase
-            .from("spec_template_fields")
+            .from("library_template_fields")
             .select("id, name")
             .in("template_id", templateIds);
 
@@ -237,18 +237,18 @@ export const searchSpecsTool = () =>
             );
 
             const { data: fieldValues } = await supabase
-              .from("spec_field_values")
-              .select("spec_id, template_field_id, value")
-              .in("spec_id", specIds)
+              .from("library_item_field_values")
+              .select("library_item_id, template_field_id, value")
+              .in("library_item_id", specIds)
               .in("template_field_id", fieldIds);
 
             for (const fv of fieldValues ?? []) {
-              const arr = fieldValuesBySpec.get(fv.spec_id) ?? [];
+              const arr = fieldValuesBySpec.get(fv.library_item_id) ?? [];
               arr.push({
                 fieldName: fieldNameById.get(fv.template_field_id) ?? "",
                 value: fv.value ?? "",
               });
-              fieldValuesBySpec.set(fv.spec_id, arr);
+              fieldValuesBySpec.set(fv.library_item_id, arr);
             }
           }
         }

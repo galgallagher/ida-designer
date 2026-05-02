@@ -44,7 +44,7 @@ type CategoryNode = { id: string; name: string; parent_id: string | null };
 
 type ProjectOptionRow = {
   id: string;
-  spec_id: string | null;
+  library_item_id: string | null;
   notes: string | null;
   status: string;
   created_at: string;
@@ -145,7 +145,7 @@ export default function ProjectOptionsClient({
   const visibleSpecs = useMemo(() => {
     if (active.kind === "inspiration" || active.kind === "sketch") return [];
     return projectSpecs.filter((ps) => {
-      const spec = ps.spec_id ? specDetailMap.get(ps.spec_id) : null;
+      const spec = ps.library_item_id ? specDetailMap.get(ps.library_item_id) : null;
       if (active.kind === "all") return true;
       return (spec?.category_name ?? null) === active.name;
     });
@@ -163,7 +163,7 @@ export default function ProjectOptionsClient({
   function handleAdd(specId: string) {
     setAddError(null);
     startTransition(async () => {
-      const result = await addSpecToProject(projectId, { spec_id: specId });
+      const result = await addSpecToProject(projectId, { library_item_id: specId });
       if (result.error) setAddError(result.error);
       else { setDialogOpen(false); setSearch(""); }
     });
@@ -295,7 +295,7 @@ export default function ProjectOptionsClient({
             ) : (
               <div className="grid grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6 gap-3">
                 {visibleSpecs.map((ps) => {
-                  const spec = ps.spec_id ? specDetailMap.get(ps.spec_id) : null;
+                  const spec = ps.library_item_id ? specDetailMap.get(ps.library_item_id) : null;
                   if (!spec) return null;
                   return (
                     <LibraryCard

@@ -11,7 +11,7 @@ import { createClient } from "@/lib/supabase/server";
 import { ArrowLeft, ExternalLink, Package, Pencil } from "lucide-react";
 import AppShell from "@/components/AppShell";
 import DeleteSpecButton from "./DeleteSpecButton";
-import type { SpecRow } from "@/types/database";
+import type { LibraryItemRow } from "@/types/database";
 
 interface PageProps {
   params: Promise<{ id: string }>;
@@ -22,40 +22,40 @@ export default async function SpecDetailPage({ params }: PageProps) {
   const supabase = await createClient();
 
   // Fetch spec
-  const { data: specData } = await supabase.from("specs").select("*").eq("id", id).single();
+  const { data: specData } = await supabase.from("library_items").select("*").eq("id", id).single();
   if (!specData) notFound();
   const spec = specData;
 
   // Fetch category
   const { data: catData } = spec.category_id
-    ? await supabase.from("spec_categories").select("*").eq("id", spec.category_id).single()
+    ? await supabase.from("library_categories").select("*").eq("id", spec.category_id).single()
     : { data: null };
 
   // Fetch template fields + values
   const { data: fieldsData } = await supabase
-    .from("spec_template_fields")
+    .from("library_template_fields")
     .select("*")
     .eq("template_id", spec.template_id)
     .order("order_index");
   const fields = fieldsData ?? [];
 
   const { data: valuesData } = await supabase
-    .from("spec_field_values")
+    .from("library_item_field_values")
     .select("*")
-    .eq("spec_id", id);
+    .eq("library_item_id", id);
   const values = valuesData ?? [];
   const valueMap = new Map(values.map((v) => [v.template_field_id, v.value]));
 
   // Fetch tags
   const { data: tagsData } = await supabase
-    .from("spec_tags").select("tag").eq("spec_id", id);
+    .from("library_item_tags").select("tag").eq("library_item_id", id);
   const tags = (tagsData ?? []).map((t) => t.tag);
 
   // Fetch suppliers via junction
   const { data: specSupData } = await supabase
-    .from("spec_suppliers")
+    .from("library_item_suppliers")
     .select("supplier_id, supplier_code, unit_cost")
-    .eq("spec_id", id);
+    .eq("library_item_id", id);
 
   const supplierIds = (specSupData ?? []).map((s) => s.supplier_id);
   type SupplierDisplay = { id: string; name: string; website: string | null; supplier_code: string | null; unit_cost: number | null };
@@ -73,7 +73,7 @@ export default async function SpecDetailPage({ params }: PageProps) {
   const { data: projectSpecData } = await supabase
     .from("project_options")
     .select("project_id")
-    .eq("spec_id", id);
+    .eq("library_item_id", id);
 
   const projectIds = (projectSpecData ?? []).map((p) => p.project_id);
   let projects: { id: string; name: string; code: string | null; client_id: string; status: string }[] = [];

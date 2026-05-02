@@ -10,7 +10,7 @@ import { createClient } from "@/lib/supabase/server";
 import { getCurrentStudioId } from "@/lib/studio-context";
 import AppShell from "@/components/AppShell";
 import SpecLibraryClient from "./SpecLibraryClient";
-import type { SpecCategoryRow } from "@/types/database";
+import type { LibraryCategoryRow } from "@/types/database";
 
 export default async function SpecLibraryPage() {
   const supabase = await createClient();
@@ -26,7 +26,7 @@ export default async function SpecLibraryPage() {
 
   // Fetch categories (flat list — client builds the tree)
   const { data: categoriesData } = await supabase
-    .from("spec_categories")
+    .from("library_categories")
     .select("*")
     .eq("studio_id", studioId)
     .eq("is_active", true)
@@ -39,7 +39,7 @@ export default async function SpecLibraryPage() {
   // / server-side search (separate change). Guards against catastrophic
   // loads on very large studios; today's libraries are well under this.
   const { data: specsData } = await supabase
-    .from("specs")
+    .from("library_items")
     .select("*")
     .eq("studio_id", studioId)
     .order("name", { ascending: true })
@@ -49,15 +49,15 @@ export default async function SpecLibraryPage() {
 
   // Fetch tags for all specs
   const { data: tagsData } = await supabase
-    .from("spec_tags")
-    .select("spec_id, tag")
-    .in("spec_id", specs.map((s) => s.id));
+    .from("library_item_tags")
+    .select("library_item_id, tag")
+    .in("library_item_id", specs.map((s) => s.id));
 
   // Fetch suppliers for all specs via junction
   const { data: specSupplierData } = await supabase
-    .from("spec_suppliers")
-    .select("spec_id, supplier_id")
-    .in("spec_id", specs.map((s) => s.id));
+    .from("library_item_suppliers")
+    .select("library_item_id, supplier_id")
+    .in("library_item_id", specs.map((s) => s.id));
 
   // Fetch supplier details from contact_companies (including website for grouped view)
   const { data: suppliersData } = await supabase
@@ -74,13 +74,13 @@ export default async function SpecLibraryPage() {
   // Build tag map and supplier map per spec
   const tagsBySpec: Record<string, string[]> = {};
   for (const t of tagsData ?? []) {
-    (tagsBySpec[t.spec_id] ??= []).push(t.tag);
+    (tagsBySpec[t.library_item_id] ??= []).push(t.tag);
   }
 
   const suppliersBySpec: Record<string, SupplierRef[]> = {};
   for (const ss of specSupplierData ?? []) {
     const sup = supplierMap.get(ss.supplier_id);
-    if (sup) (suppliersBySpec[ss.spec_id] ??= []).push(sup);
+    if (sup) (suppliersBySpec[ss.library_item_id] ??= []).push(sup);
   }
 
   // Build category lookup

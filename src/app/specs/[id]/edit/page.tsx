@@ -9,7 +9,7 @@ import { createClient } from "@/lib/supabase/server";
 import { getCurrentStudioId } from "@/lib/studio-context";
 import AppShell from "@/components/AppShell";
 import EditSpecClient from "./EditSpecClient";
-import type { SpecRow } from "@/types/database";
+import type { LibraryItemRow } from "@/types/database";
 
 interface PageProps {
   params: Promise<{ id: string }>;
@@ -22,18 +22,18 @@ export default async function EditSpecPage({ params }: PageProps) {
   if (!studioId) redirect("/specs");
 
   // Fetch spec
-  const { data: specData } = await supabase.from("specs").select("*").eq("id", id).single();
+  const { data: specData } = await supabase.from("library_items").select("*").eq("id", id).single();
   if (!specData) notFound();
   const spec = specData;
 
   // Fetch category
   const { data: catData } = spec.category_id
-    ? await supabase.from("spec_categories").select("*").eq("id", spec.category_id).single()
+    ? await supabase.from("library_categories").select("*").eq("id", spec.category_id).single()
     : { data: null };
 
   // Fetch template fields
   const { data: fieldsData } = await supabase
-    .from("spec_template_fields")
+    .from("library_template_fields")
     .select("*")
     .eq("template_id", spec.template_id)
     .order("order_index");
@@ -41,9 +41,9 @@ export default async function EditSpecPage({ params }: PageProps) {
 
   // Fetch existing field values
   const { data: valuesData } = await supabase
-    .from("spec_field_values")
+    .from("library_item_field_values")
     .select("*")
-    .eq("spec_id", id);
+    .eq("library_item_id", id);
   const values = valuesData ?? [];
   const valueMap: Record<string, string> = Object.fromEntries(
     values.filter((v) => v.value != null).map((v) => [v.template_field_id, v.value as string])
@@ -51,14 +51,14 @@ export default async function EditSpecPage({ params }: PageProps) {
 
   // Fetch existing tags
   const { data: tagsData } = await supabase
-    .from("spec_tags").select("tag").eq("spec_id", id);
+    .from("library_item_tags").select("tag").eq("library_item_id", id);
   const tags = (tagsData ?? []).map((t) => t.tag);
 
   // Fetch existing suppliers via junction
   const { data: specSupData } = await supabase
-    .from("spec_suppliers")
+    .from("library_item_suppliers")
     .select("supplier_id, supplier_code, unit_cost")
-    .eq("spec_id", id);
+    .eq("library_item_id", id);
 
   const existingSupplierJunction = specSupData?.[0] ?? null;
 

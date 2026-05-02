@@ -229,7 +229,9 @@ async function extractWithHaiku(
 ): Promise<ExtractedSpec> {
   // eslint-disable-next-line @typescript-eslint/no-require-imports
   const Anthropic = require("@anthropic-ai/sdk");
-  const client = new Anthropic.default();
+  const apiKey = process.env.ANTHROPIC_API_KEY;
+  if (!apiKey) throw new Error("ANTHROPIC_API_KEY is not configured");
+  const client = new Anthropic.default({ apiKey });
 
   const categoryList = categoryNames.length > 0 ? categoryNames.join(", ") : "none";
 
@@ -359,7 +361,7 @@ export const scrapeSpecTool = (categoryNames: string[]) =>
       const cleanUrl = stripTrackingParams(url);
 
       // ── Step 1: Check global library first (cross-studio dedup) ─────────
-      // If ANY studio has ever scraped this URL, the data lives in global_specs.
+      // If ANY studio has ever scraped this URL, the data lives in product_library.
       // We can skip the network scrape entirely and return the cached data.
       try {
         const { createClient } = await import("@/lib/supabase/server");
@@ -370,7 +372,7 @@ export const scrapeSpecTool = (categoryNames: string[]) =>
         if (studioId) {
           // 1a. Has any studio scraped this URL before?
           const { data: globalSpec } = await supabase
-            .from("global_specs")
+            .from("product_library")
             .select("id, name, code, brand_name, brand_domain, description, image_url, cost_from, cost_to, cost_unit, category_hint")
             .eq("source_url", cleanUrl)
             .limit(1)
@@ -379,24 +381,24 @@ export const scrapeSpecTool = (categoryNames: string[]) =>
           if (globalSpec) {
             // 1b. Has THIS studio already pinned it?
             const { data: studioSpec } = await supabase
-              .from("specs")
+              .from("library_items")
               .select("id, name")
               .eq("studio_id", studioId)
-              .eq("global_spec_id", globalSpec.id)
+              .eq("product_library_id", globalSpec.id)
               .limit(1)
               .single();
 
             if (studioSpec) {
-              return { already_exists: true, spec_id: studioSpec.id, spec_name: studioSpec.name, spec_url: `/specs` };
+              return { already_exists: true, library_item_id: studioSpec.id, spec_name: studioSpec.name, spec_url: `/specs` };
             }
 
             // 1c. New to this studio — load global fields and return for pinning.
             // No network scrape needed.
             const [{ data: globalFields }, variantSiblingResult] = await Promise.all([
               supabase
-                .from("global_spec_fields")
+                .from("product_library_fields")
                 .select("label, value, sort_order")
-                .eq("global_spec_id", globalSpec.id)
+                .eq("product_library_id", globalSpec.id)
                 .order("sort_order"),
               // Check for a colorway sibling already in this studio
               (() => {
@@ -404,7 +406,7 @@ export const scrapeSpecTool = (categoryNames: string[]) =>
                 if (lastSlash > 10) {
                   const baseUrl = cleanUrl.substring(0, lastSlash);
                   return supabase
-                    .from("specs")
+                    .from("library_items")
                     .select("id, variant_group_id")
                     .eq("studio_id", studioId)
                     .like("source_url", `${baseUrl}/%`)
@@ -422,7 +424,7 @@ export const scrapeSpecTool = (categoryNames: string[]) =>
               fromGlobalVariantGroupId = variantSibling.variant_group_id ?? crypto.randomUUID();
               if (!variantSibling.variant_group_id) {
                 await supabase
-                  .from("specs")
+                  .from("library_items")
                   .update({ variant_group_id: fromGlobalVariantGroupId })
                   .eq("id", variantSibling.id);
               }
@@ -430,7 +432,7 @@ export const scrapeSpecTool = (categoryNames: string[]) =>
 
             return {
               from_global: true as const,
-              global_spec_id: globalSpec.id,
+              product_library_id: globalSpec.id,
               name: globalSpec.name,
               code: globalSpec.code ?? null,
               brand: globalSpec.brand_name,
@@ -450,7 +452,7 @@ export const scrapeSpecTool = (categoryNames: string[]) =>
           // ── Step 2: Not in global library — check studio-specific dedup ──
           // Belt-and-braces: catches any race window or pre-026 migration specs
           const { data: specByUrl } = await supabase
-            .from("specs")
+            .from("library_items")
             .select("id, name")
             .eq("studio_id", studioId)
             .eq("source_url", cleanUrl)
@@ -458,27 +460,27 @@ export const scrapeSpecTool = (categoryNames: string[]) =>
             .single();
 
           if (specByUrl) {
-            return { already_exists: true, spec_id: specByUrl.id, spec_name: specByUrl.name, spec_url: `/specs` };
+            return { already_exists: true, library_item_id: specByUrl.id, spec_name: specByUrl.name, spec_url: `/specs` };
           }
 
           // Fallback: legacy source: tag (pre-024 migration specs)
           const { data: tagRow } = await supabase
-            .from("spec_tags")
-            .select("spec_id")
+            .from("library_item_tags")
+            .select("library_item_id")
             .eq("tag", `source:${cleanUrl}`)
             .limit(1)
             .single();
 
-          if (tagRow?.spec_id) {
+          if (tagRow?.library_item_id) {
             const { data: specRow } = await supabase
-              .from("specs")
+              .from("library_items")
               .select("id, name")
-              .eq("id", tagRow.spec_id)
+              .eq("id", tagRow.library_item_id)
               .eq("studio_id", studioId)
               .single();
 
             if (specRow) {
-              return { already_exists: true, spec_id: specRow.id, spec_name: specRow.name, spec_url: `/specs` };
+              return { already_exists: true, library_item_id: specRow.id, spec_name: specRow.name, spec_url: `/specs` };
             }
           }
         }
@@ -498,7 +500,7 @@ export const scrapeSpecTool = (categoryNames: string[]) =>
           if (lastSlash > 10) {
             const baseUrl = cleanUrl.substring(0, lastSlash);
             const { data: sibling } = await _vSb
-              .from("specs")
+              .from("library_items")
               .select("id, variant_group_id")
               .eq("studio_id", _vSid)
               .like("source_url", `${baseUrl}/%`)
@@ -509,7 +511,7 @@ export const scrapeSpecTool = (categoryNames: string[]) =>
               variantGroupId = sibling.variant_group_id ?? crypto.randomUUID();
               if (!sibling.variant_group_id) {
                 await _vSb
-                  .from("specs")
+                  .from("library_items")
                   .update({ variant_group_id: variantGroupId })
                   .eq("id", sibling.id);
               }
@@ -660,7 +662,7 @@ export const scrapeSpecTool = (categoryNames: string[]) =>
         const sid = await getCurrentStudioId();
         if (sid) {
           const { data: studioTemplates } = await supabase
-            .from("spec_templates")
+            .from("library_templates")
             .select("id")
             .eq("studio_id", sid)
             .eq("is_active", true);
@@ -670,7 +672,7 @@ export const scrapeSpecTool = (categoryNames: string[]) =>
           const [fieldsRes, companiesRes] = await Promise.all([
             templateIds.length > 0
               ? supabase
-                  .from("spec_template_fields")
+                  .from("library_template_fields")
                   .select("id, template_id, name, ai_hint")
                   .in("template_id", templateIds)
               : Promise.resolve({ data: [] as TemplateField[] }),
@@ -724,7 +726,7 @@ export const scrapeSpecTool = (categoryNames: string[]) =>
         const studioId = await getCurrentStudioId();
         if (studioId && spec.category_suggestion) {
           const { data: categories } = await supabase
-            .from("spec_categories")
+            .from("library_categories")
             .select("id, name, template_id, parent_id")
             .eq("studio_id", studioId)
             .eq("is_active", true);
@@ -841,8 +843,8 @@ export const scrapeSpecTool = (categoryNames: string[]) =>
         }
       } catch { /* non-critical */ }
 
-      // ── Step 3: Write to global_specs after a fresh scrape ───────────
-      // Uses service_role client — global_specs requires service_role for writes.
+      // ── Step 3: Write to product_library after a fresh scrape ───────────
+      // Uses service_role client — product_library requires service_role for writes.
       // Non-blocking: wrapped in try/catch so a failed global write never blocks
       // the studio from saving their spec.
       let globalSpecId: string | null = null;
@@ -874,7 +876,7 @@ export const scrapeSpecTool = (categoryNames: string[]) =>
 
         // ignoreDuplicates: true — first scrape wins; don't overwrite existing global data
         const { data: upsertedGlobal } = await serviceSupabase
-          .from("global_specs")
+          .from("product_library")
           .upsert(
             {
               source_url: cleanUrl,
@@ -900,34 +902,34 @@ export const scrapeSpecTool = (categoryNames: string[]) =>
           // Write freeform fields (first scrape wins — DO NOTHING on conflict)
           if (spec.fields.length > 0) {
             await serviceSupabase
-              .from("global_spec_fields")
+              .from("product_library_fields")
               .upsert(
                 spec.fields
                   .filter((f) => f.label?.trim() && f.value?.trim())
                   .map((f, i) => ({
-                    global_spec_id: globalSpecId!,
+                    product_library_id: globalSpecId!,
                     label: f.label.trim(),
                     value: f.value.trim(),
                     sort_order: i,
                   })),
-                { onConflict: "global_spec_id,label", ignoreDuplicates: true }
+                { onConflict: "product_library_id,label", ignoreDuplicates: true }
               );
           }
 
           // Write tags (DO NOTHING on conflict)
           if (spec.tags.length > 0) {
             await serviceSupabase
-              .from("global_spec_tags")
+              .from("product_library_tags")
               .upsert(
-                spec.tags.map((tag) => ({ global_spec_id: globalSpecId!, tag })),
-                { onConflict: "global_spec_id,tag", ignoreDuplicates: true }
+                spec.tags.map((tag) => ({ product_library_id: globalSpecId!, tag })),
+                { onConflict: "product_library_id,tag", ignoreDuplicates: true }
               );
           }
         }
       } catch { /* non-critical — global write failure never blocks studio save */ }
 
       const displayName = spec.colorway ? `${spec.name} · ${spec.colorway}` : spec.name;
-      return { ...spec, name: displayName, category_id, source_url: cleanUrl, images, field_values, supplier_id, global_spec_id: globalSpecId, variant_group_id: variantGroupId };
+      return { ...spec, name: displayName, category_id, source_url: cleanUrl, images, field_values, supplier_id, product_library_id: globalSpecId, variant_group_id: variantGroupId };
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
         const stack = err instanceof Error ? err.stack : undefined;

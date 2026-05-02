@@ -10,9 +10,9 @@
  *
  * Used in two places:
  *  1. scrape-spec.ts  — matching newly-scraped Haiku fields to studio template fields
- *  2. save/route.ts   — matching global_spec_fields to studio template fields at pin time
+ *  2. save/route.ts   — matching product_library_fields to studio template fields at pin time
  *
- * Returns an array of { field_id, label, value } ready for spec_field_values insert.
+ * Returns an array of { field_id, label, value } ready for library_item_field_values insert.
  */
 
 export interface RawField {

@@ -25,7 +25,7 @@ export async function createCategory(formData: FormData): Promise<Result> {
 
   // Get next sort order within the same parent scope
   let siblingsQuery = supabase
-    .from("spec_categories")
+    .from("library_categories")
     .select("sort_order")
     .eq("studio_id", studioId)
     .order("sort_order", { ascending: false })
@@ -39,7 +39,7 @@ export async function createCategory(formData: FormData): Promise<Result> {
   const sort_order = (siblings?.[0]?.sort_order ?? 0) + 1;
 
   const { error: insertError } = await supabase
-    .from("spec_categories")
+    .from("library_categories")
     .insert({ studio_id: studioId, name, parent_id, icon, sort_order, is_active: true, abbreviation });
 
   if (insertError) {
@@ -65,7 +65,7 @@ export async function updateCategory(id: string, formData: FormData): Promise<Re
   const abbreviation = (formData.get("abbreviation") as string | null)?.trim().toUpperCase() || null;
 
   const { error: updateError } = await supabase
-    .from("spec_categories")
+    .from("library_categories")
     .update({ name, icon, is_active, abbreviation })
     .eq("id", id)
     .eq("studio_id", studioId);
@@ -86,7 +86,7 @@ export async function toggleCategoryActive(id: string, currentValue: boolean): P
   if (error || !supabase || !studioId) return { error: error ?? "Unknown error." };
 
   const { error: updateError } = await supabase
-    .from("spec_categories")
+    .from("library_categories")
     .update({ is_active: !currentValue })
     .eq("id", id)
     .eq("studio_id", studioId);
@@ -104,7 +104,7 @@ export async function deleteCategory(id: string): Promise<Result> {
 
   // Refuse if any specs reference this category
   const { count: specCount } = await supabase
-    .from("specs")
+    .from("library_items")
     .select("id", { count: "exact", head: true })
     .eq("category_id", id);
 
@@ -114,25 +114,25 @@ export async function deleteCategory(id: string): Promise<Result> {
 
   // Also refuse if it has child categories with specs
   const { data: children } = await supabase
-    .from("spec_categories")
+    .from("library_categories")
     .select("id")
     .eq("parent_id", id);
 
   if (children && children.length > 0) {
     const childIds = children.map((c) => c.id);
     const { count: childSpecCount } = await supabase
-      .from("specs")
+      .from("library_items")
       .select("id", { count: "exact", head: true })
       .in("category_id", childIds);
     if (childSpecCount && childSpecCount > 0) {
       return { error: `Cannot delete — sub-categories have ${childSpecCount} spec${childSpecCount > 1 ? "s" : ""}.` };
     }
     // Delete child categories first
-    await supabase.from("spec_categories").delete().in("id", childIds);
+    await supabase.from("library_categories").delete().in("id", childIds);
   }
 
   const { error: deleteError } = await supabase
-    .from("spec_categories")
+    .from("library_categories")
     .delete()
     .eq("id", id)
     .eq("studio_id", studioId);
@@ -150,7 +150,7 @@ export async function moveCategory(id: string, direction: "up" | "down"): Promis
 
   // Get this category
   const { data: cat } = await supabase
-    .from("spec_categories")
+    .from("library_categories")
     .select("id, sort_order, parent_id")
     .eq("id", id)
     .single();
@@ -159,7 +159,7 @@ export async function moveCategory(id: string, direction: "up" | "down"): Promis
 
   // Find the adjacent sibling in the given direction
   let siblingQuery = supabase
-    .from("spec_categories")
+    .from("library_categories")
     .select("id, sort_order")
     .eq("studio_id", studioId)
     .filter("sort_order", direction === "up" ? "lt" : "gt", cat.sort_order)
@@ -175,8 +175,8 @@ export async function moveCategory(id: string, direction: "up" | "down"): Promis
   if (!sibling) return {}; // already at the edge
 
   // Swap sort orders
-  await supabase.from("spec_categories").update({ sort_order: sibling.sort_order }).eq("id", cat.id);
-  await supabase.from("spec_categories").update({ sort_order: cat.sort_order }).eq("id", sibling.id);
+  await supabase.from("library_categories").update({ sort_order: sibling.sort_order }).eq("id", cat.id);
+  await supabase.from("library_categories").update({ sort_order: cat.sort_order }).eq("id", sibling.id);
 
   revalidate();
   return {};
@@ -194,7 +194,7 @@ export async function ensureCategoryTemplate(
 
   // Check if one already exists
   const { data: cat } = await supabase
-    .from("spec_categories")
+    .from("library_categories")
     .select("template_id, name")
     .eq("id", categoryId)
     .single();
@@ -204,7 +204,7 @@ export async function ensureCategoryTemplate(
 
   // Create a new template
   const { data: tmpl, error: tmplError } = await supabase
-    .from("spec_templates")
+    .from("library_templates")
     .insert({ studio_id: studioId, name: cat.name, is_active: true })
     .select("id")
     .single();
@@ -213,7 +213,7 @@ export async function ensureCategoryTemplate(
 
   // Link category → template
   await supabase
-    .from("spec_categories")
+    .from("library_categories")
     .update({ template_id: tmpl.id })
     .eq("id", categoryId);
 

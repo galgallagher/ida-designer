@@ -14,7 +14,9 @@ export async function extractVisualTags(imageUrl: string): Promise<string[]> {
   try {
     // eslint-disable-next-line @typescript-eslint/no-require-imports
     const Anthropic = require("@anthropic-ai/sdk");
-    const client = new Anthropic.default();
+    const apiKey = process.env.ANTHROPIC_API_KEY;
+    if (!apiKey) throw new Error("ANTHROPIC_API_KEY is not configured");
+    const client = new Anthropic.default({ apiKey });
 
     const response = await client.messages.create({
       model: "claude-haiku-4-5-20251001",

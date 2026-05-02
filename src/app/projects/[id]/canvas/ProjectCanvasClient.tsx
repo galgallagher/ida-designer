@@ -66,7 +66,7 @@ interface Props {
 }
 
 interface ScrapeCardResult {
-  spec_id: string;
+  library_item_id: string;
   name: string;
   brand?: string | null;
   code?: string | null;
@@ -441,7 +441,7 @@ export default function ProjectCanvasClient({ projectId, studioId, canvases: ini
         w: CARD_W,
         h: cardH,
         imageUrl: result.image_url ?? "",
-        specId: result.spec_id,
+        specId: result.library_item_id,
         specName: result.name,
         code: result.code ?? "",
         category: result.category_name ?? "",
@@ -504,7 +504,7 @@ export default function ProjectCanvasClient({ projectId, studioId, canvases: ini
     });
 
     // Add to project options (fire-and-forget — ignore if already there)
-    addSpecToProject(projectId, { spec_id: spec.id });
+    addSpecToProject(projectId, { library_item_id: spec.id });
   }
 
   // Reset placement offset when the picker closes so the next session starts

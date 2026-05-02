@@ -9,7 +9,7 @@ import {
 } from "lucide-react";
 import { createSpec } from "../actions";
 import type { CreateSpecResult } from "../actions";
-import type { SpecCategoryRow, SpecTemplateRow, SpecTemplateFieldRow } from "@/types/database";
+import type { LibraryCategoryRow, LibraryTemplateRow, LibraryTemplateFieldRow } from "@/types/database";
 
 // ── Icon map ──────────────────────────────────────────────────────────────────
 
@@ -22,9 +22,9 @@ const iconMap: Record<string, React.ElementType> = {
 // ── Types ─────────────────────────────────────────────────────────────────────
 
 interface NewSpecClientProps {
-  categories: SpecCategoryRow[];
-  templates: SpecTemplateRow[];
-  fieldsByTemplate: Record<string, SpecTemplateFieldRow[]>;
+  categories: LibraryCategoryRow[];
+  templates: LibraryTemplateRow[];
+  fieldsByTemplate: Record<string, LibraryTemplateFieldRow[]>;
   suppliers: { id: string; name: string; website: string | null }[];
 }
 

@@ -23,17 +23,17 @@ export async function getSupplierSpecs(companyId: string): Promise<SupplierSpec[
 
   // Step 1: get spec IDs linked to this supplier
   const { data: links } = await supabase
-    .from("spec_suppliers")
-    .select("spec_id")
+    .from("library_item_suppliers")
+    .select("library_item_id")
     .eq("supplier_id", companyId);
 
   if (!links || links.length === 0) return [];
 
-  const specIds = links.map((l) => l.spec_id);
+  const specIds = links.map((l) => l.library_item_id);
 
   // Step 2: fetch those specs (studio scoped) with their categories
   const { data: specs } = await supabase
-    .from("specs")
+    .from("library_items")
     .select("id, name, image_url, cost_from, cost_to, cost_unit, category_id")
     .eq("studio_id", studioId)
     .in("id", specIds)
@@ -46,7 +46,7 @@ export async function getSupplierSpecs(companyId: string): Promise<SupplierSpec[
   const catMap = new Map<string, string>();
   if (catIds.length > 0) {
     const { data: cats } = await supabase
-      .from("spec_categories")
+      .from("library_categories")
       .select("id, name")
       .in("id", catIds);
     (cats ?? []).forEach((c) => catMap.set(c.id, c.name));

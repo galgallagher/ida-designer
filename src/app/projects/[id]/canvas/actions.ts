@@ -180,8 +180,8 @@ export async function getLibrarySpecs(): Promise<{
   if (!studioId) return { error: "No studio context.", specs: [] };
 
   const { data, error } = await supabase
-    .from("specs")
-    .select("id, name, code, image_url, category:spec_categories(name)")
+    .from("library_items")
+    .select("id, name, code, image_url, category:library_categories(name)")
     .eq("studio_id", studioId)
     .order("name", { ascending: true });
 
@@ -219,13 +219,13 @@ export async function getProjectOptionSpecIds(projectId: string): Promise<string
 
   const { data } = await supabase
     .from("project_options")
-    .select("spec_id")
+    .select("library_item_id")
     .eq("project_id", projectId)
     .eq("studio_id", studioId)
-    .not("spec_id", "is", null);
+    .not("library_item_id", "is", null);
 
   return (data ?? [])
-    .map((r) => r.spec_id)
+    .map((r) => r.library_item_id)
     .filter((id): id is string => id !== null);
 }
 

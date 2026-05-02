@@ -13,7 +13,7 @@ import {
 import {
   createField, updateField, deleteField, moveField,
 } from "./[id]/field-actions";
-import type { SpecCategoryRow, SpecTemplateFieldRow, FieldType } from "@/types/database";
+import type { LibraryCategoryRow, LibraryTemplateFieldRow, FieldType } from "@/types/database";
 
 // ── Icon map ──────────────────────────────────────────────────────────────────
 
@@ -73,9 +73,9 @@ const inputStyle: React.CSSProperties = {
 // ── Types ─────────────────────────────────────────────────────────────────────
 
 interface CategoriesClientProps {
-  categories: SpecCategoryRow[];
+  categories: LibraryCategoryRow[];
   specCountByCategory: Record<string, number>;
-  allFields: SpecTemplateFieldRow[];
+  allFields: LibraryTemplateFieldRow[];
 }
 
 type AddModalState =
@@ -84,7 +84,7 @@ type AddModalState =
 
 type FieldModalState =
   | { mode: "add" }
-  | { mode: "edit"; field: SpecTemplateFieldRow };
+  | { mode: "edit"; field: LibraryTemplateFieldRow };
 
 // ── Root component ────────────────────────────────────────────────────────────
 
@@ -401,7 +401,7 @@ function CategoryPanel({
   category,
   onClose,
 }: {
-  category: SpecCategoryRow;
+  category: LibraryCategoryRow;
   onClose: () => void;
 }) {
   const isSubcategory = !!category.parent_id;
@@ -530,10 +530,10 @@ function TemplateFieldsCard({
   parentCategory,
   parentFields,
 }: {
-  category: SpecCategoryRow;
-  ownFields: SpecTemplateFieldRow[];
-  parentCategory: SpecCategoryRow | null;
-  parentFields: SpecTemplateFieldRow[];
+  category: LibraryCategoryRow;
+  ownFields: LibraryTemplateFieldRow[];
+  parentCategory: LibraryCategoryRow | null;
+  parentFields: LibraryTemplateFieldRow[];
 }) {
   const isSubcategory = !!category.parent_id;
   // activeTemplateId starts from the category's existing template, or gets set

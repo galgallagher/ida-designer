@@ -1,4 +1,4 @@
-import type { SpecCategoryRow } from "@/types/database";
+import type { LibraryCategoryRow } from "@/types/database";
 
 /**
  * Builds a human-readable label for a spec category.
@@ -7,7 +7,7 @@ import type { SpecCategoryRow } from "@/types/database";
  */
 export function getCategoryLabel(
   catId: string | null,
-  categories: SpecCategoryRow[]
+  categories: LibraryCategoryRow[]
 ): string | null {
   if (!catId) return null;
   const cat = categories.find((c) => c.id === catId);

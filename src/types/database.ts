@@ -112,7 +112,13 @@ export type ContactRow = {
   updated_at: string;
 };
 
-export type SpecTemplateRow = {
+// ── Library — formerly "Specs" (renamed in migration 054, see ADR 031) ──────
+// A library item is the studio's curated entry. Two modes:
+//   - product_library_id IS NOT NULL → sourced product. Read canonical data
+//     from product_library, fall back to *_override columns here.
+//   - product_library_id IS NULL → finish. Data lives directly on this row.
+
+export type LibraryTemplateRow = {
   id: string;
   studio_id: string;
   name: string;
@@ -122,7 +128,7 @@ export type SpecTemplateRow = {
   updated_at: string;
 };
 
-export type SpecTemplateFieldRow = {
+export type LibraryTemplateFieldRow = {
   id: string;
   template_id: string;
   name: string;
@@ -134,7 +140,7 @@ export type SpecTemplateFieldRow = {
   created_at: string;
 };
 
-export type SpecRow = {
+export type LibraryItemRow = {
   id: string;
   studio_id: string;
   template_id: string;
@@ -146,10 +152,19 @@ export type SpecRow = {
   image_url: string | null;
   image_path: string | null;
   source_url: string | null;
-  global_spec_id: string | null;
+  product_library_id: string | null;
   cost_from: number | null;
   cost_to: number | null;
   cost_unit: string | null;
+  // Override columns — only meaningful when product_library_id IS NOT NULL.
+  // NULL = use canonical from product_library; SET = use studio's local value.
+  name_override: string | null;
+  description_override: string | null;
+  image_url_override: string | null;
+  image_path_override: string | null;
+  cost_from_override: number | null;
+  cost_to_override: number | null;
+  cost_unit_override: string | null;
   created_at: string;
   updated_at: string;
 };
@@ -201,7 +216,7 @@ export type ContactTagRow = {
   tag: string;
 };
 
-export type SpecCategoryRow = {
+export type LibraryCategoryRow = {
   id: string;
   studio_id: string;
   parent_id: string | null;
@@ -214,21 +229,21 @@ export type SpecCategoryRow = {
   created_at: string;
 };
 
-export type SpecTagRow = {
-  spec_id: string;
+export type LibraryItemTagRow = {
+  library_item_id: string;
   tag: string;
 };
 
-export type SpecSupplierRow = {
-  spec_id: string;
+export type LibraryItemSupplierRow = {
+  library_item_id: string;
   supplier_id: string;
   supplier_code: string | null;
   unit_cost: number | null;
 };
 
-export type SpecFieldValueRow = {
+export type LibraryItemFieldValueRow = {
   id: string;
-  spec_id: string;
+  library_item_id: string;
   template_field_id: string;
   value: string | null;
   created_at: string;
@@ -241,7 +256,7 @@ export type ProjectOptionRow = {
   id: string;
   project_id: string;
   studio_id: string | null;
-  spec_id: string | null;
+  library_item_id: string | null;
   drawing_id: string | null;
   quantity: number | null;
   unit: string | null;
@@ -267,7 +282,7 @@ export type ProjectSpecRow = {
   budget: number | null;
   effective_unit_cost: number | null;
   is_budgeted: boolean;
-  spec_id: string | null;
+  library_item_id: string | null;
   notes: string | null;
   created_at: string;
   updated_at: string;
@@ -285,9 +300,11 @@ export type ProjectMemberRow = {
   created_at: string;
 };
 
-// ── Global library ─────────────────────────────────────────────────────────────
+// ── Product Library — formerly "Global Specs" (renamed in migration 054) ────
+// Canonical product catalogue. One row per unique product (URL-deduplicated).
+// Cross-studio readable; service-role only writes.
 
-export type GlobalSpecRow = {
+export type ProductLibraryRow = {
   id: string;
   source_url: string;
   name: string;
@@ -304,16 +321,16 @@ export type GlobalSpecRow = {
   updated_at: string;
 };
 
-export type GlobalSpecFieldRow = {
+export type ProductLibraryFieldRow = {
   id: string;
-  global_spec_id: string;
+  product_library_id: string;
   label: string;
   value: string;
   sort_order: number;
 };
 
-export type GlobalSpecTagRow = {
-  global_spec_id: string;
+export type ProductLibraryTagRow = {
+  product_library_id: string;
   tag: string;
 };
 
@@ -417,21 +434,21 @@ export type ProjectMemberInsert = Omit<ProjectMemberRow, "id" | "created_at">;
 export type ClientInsert = Insertable<Omit<ClientRow, "id" | "created_at" | "updated_at">>;
 export type ProjectInsert = Insertable<Omit<ProjectRow, "id" | "created_at" | "updated_at" | "currency">> & { currency?: string };
 export type ContactInsert = Insertable<Omit<ContactRow, "id" | "created_at" | "updated_at">>;
-export type SpecTemplateInsert = Insertable<Omit<SpecTemplateRow, "id" | "created_at" | "updated_at">>;
-export type SpecTemplateFieldInsert = Insertable<Omit<SpecTemplateFieldRow, "id" | "created_at">>;
-export type SpecInsert = Insertable<Omit<SpecRow, "id" | "created_at" | "updated_at">>;
-export type SpecFieldValueInsert = Insertable<Omit<SpecFieldValueRow, "id" | "created_at">>;
-export type SpecCategoryInsert = Insertable<Omit<SpecCategoryRow, "id" | "created_at">>;
-export type SpecSupplierInsert = SpecSupplierRow;
+export type LibraryTemplateInsert = Insertable<Omit<LibraryTemplateRow, "id" | "created_at" | "updated_at">>;
+export type LibraryTemplateFieldInsert = Insertable<Omit<LibraryTemplateFieldRow, "id" | "created_at">>;
+export type LibraryItemInsert = Insertable<Omit<LibraryItemRow, "id" | "created_at" | "updated_at">>;
+export type LibraryItemFieldValueInsert = Insertable<Omit<LibraryItemFieldValueRow, "id" | "created_at">>;
+export type LibraryCategoryInsert = Insertable<Omit<LibraryCategoryRow, "id" | "created_at">>;
+export type LibraryItemSupplierInsert = LibraryItemSupplierRow;
 export type ProjectOptionInsert = Insertable<Omit<ProjectOptionRow, "id" | "created_at" | "updated_at">>;
 export type StudioMaterialInsert = Insertable<Omit<StudioMaterialRow, "id" | "created_at" | "updated_at">>;
 export type DefaultFinishInsert = Insertable<Omit<DefaultFinishRow, "id" | "created_at" | "updated_at">>;
 export type ContactCategoryInsert = Insertable<Omit<ContactCategoryRow, "id" | "created_at">>;
 export type ContactCompanyInsert = Insertable<Omit<ContactCompanyRow, "id" | "created_at" | "updated_at">>;
 export type ContactPersonInsert = Insertable<Omit<ContactPersonRow, "id" | "created_at" | "updated_at">>;
-export type GlobalSpecInsert = Insertable<Omit<GlobalSpecRow, "id" | "scraped_at" | "updated_at">>;
-export type GlobalSpecFieldInsert = Insertable<Omit<GlobalSpecFieldRow, "id">>;
-export type GlobalSpecTagInsert = GlobalSpecTagRow;
+export type ProductLibraryInsert = Insertable<Omit<ProductLibraryRow, "id" | "scraped_at" | "updated_at">>;
+export type ProductLibraryFieldInsert = Insertable<Omit<ProductLibraryFieldRow, "id">>;
+export type ProductLibraryTagInsert = ProductLibraryTagRow;
 export type ProjectCanvasInsert = Insertable<Omit<ProjectCanvasRow, "id" | "created_at" | "updated_at">>;
 export type ProjectImageInsert = Insertable<Omit<ProjectImageRow, "id" | "created_at">>;
 export type ProjectSpecInsert = Insertable<Omit<ProjectSpecRow, "id" | "created_at" | "updated_at" | "effective_unit_cost" | "is_budgeted">>;
@@ -483,28 +500,28 @@ export type Database = {
         Update: Partial<ProjectInsert>;
         Relationships: EmptyRelationships;
       };
-      spec_templates: {
-        Row: SpecTemplateRow;
-        Insert: SpecTemplateInsert;
-        Update: Partial<SpecTemplateInsert>;
+      library_templates: {
+        Row: LibraryTemplateRow;
+        Insert: LibraryTemplateInsert;
+        Update: Partial<LibraryTemplateInsert>;
         Relationships: EmptyRelationships;
       };
-      spec_template_fields: {
-        Row: SpecTemplateFieldRow;
-        Insert: SpecTemplateFieldInsert;
-        Update: Partial<SpecTemplateFieldInsert>;
+      library_template_fields: {
+        Row: LibraryTemplateFieldRow;
+        Insert: LibraryTemplateFieldInsert;
+        Update: Partial<LibraryTemplateFieldInsert>;
         Relationships: EmptyRelationships;
       };
-      specs: {
-        Row: SpecRow;
-        Insert: SpecInsert;
-        Update: Partial<SpecInsert>;
+      library_items: {
+        Row: LibraryItemRow;
+        Insert: LibraryItemInsert;
+        Update: Partial<LibraryItemInsert>;
         Relationships: EmptyRelationships;
       };
-      spec_field_values: {
-        Row: SpecFieldValueRow;
-        Insert: SpecFieldValueInsert;
-        Update: Partial<SpecFieldValueInsert>;
+      library_item_field_values: {
+        Row: LibraryItemFieldValueRow;
+        Insert: LibraryItemFieldValueInsert;
+        Update: Partial<LibraryItemFieldValueInsert>;
         Relationships: EmptyRelationships;
       };
       project_options: {
@@ -543,22 +560,22 @@ export type Database = {
         Update: Partial<ContactTagRow>;
         Relationships: EmptyRelationships;
       };
-      spec_categories: {
-        Row: SpecCategoryRow;
-        Insert: SpecCategoryInsert;
-        Update: Partial<SpecCategoryInsert>;
+      library_categories: {
+        Row: LibraryCategoryRow;
+        Insert: LibraryCategoryInsert;
+        Update: Partial<LibraryCategoryInsert>;
         Relationships: EmptyRelationships;
       };
-      spec_tags: {
-        Row: SpecTagRow;
-        Insert: SpecTagRow;
-        Update: Partial<SpecTagRow>;
+      library_item_tags: {
+        Row: LibraryItemTagRow;
+        Insert: LibraryItemTagRow;
+        Update: Partial<LibraryItemTagRow>;
         Relationships: EmptyRelationships;
       };
-      spec_suppliers: {
-        Row: SpecSupplierRow;
-        Insert: SpecSupplierInsert;
-        Update: Partial<SpecSupplierInsert>;
+      library_item_suppliers: {
+        Row: LibraryItemSupplierRow;
+        Insert: LibraryItemSupplierInsert;
+        Update: Partial<LibraryItemSupplierInsert>;
         Relationships: EmptyRelationships;
       };
       contacts: {
@@ -579,22 +596,22 @@ export type Database = {
         Update: Partial<ProjectMemberInsert>;
         Relationships: EmptyRelationships;
       };
-      global_specs: {
-        Row: GlobalSpecRow;
-        Insert: GlobalSpecInsert;
-        Update: Partial<GlobalSpecInsert>;
+      product_library: {
+        Row: ProductLibraryRow;
+        Insert: ProductLibraryInsert;
+        Update: Partial<ProductLibraryInsert>;
         Relationships: EmptyRelationships;
       };
-      global_spec_fields: {
-        Row: GlobalSpecFieldRow;
-        Insert: GlobalSpecFieldInsert;
-        Update: Partial<GlobalSpecFieldInsert>;
+      product_library_fields: {
+        Row: ProductLibraryFieldRow;
+        Insert: ProductLibraryFieldInsert;
+        Update: Partial<ProductLibraryFieldInsert>;
         Relationships: EmptyRelationships;
       };
-      global_spec_tags: {
-        Row: GlobalSpecTagRow;
-        Insert: GlobalSpecTagInsert;
-        Update: Partial<GlobalSpecTagInsert>;
+      product_library_tags: {
+        Row: ProductLibraryTagRow;
+        Insert: ProductLibraryTagInsert;
+        Update: Partial<ProductLibraryTagInsert>;
         Relationships: EmptyRelationships;
       };
       studio_materials: {
@@ -635,6 +652,14 @@ export type Database = {
         Returns: undefined;
       };
       seed_default_studio_materials: {
+        Args: { p_studio_id: string };
+        Returns: undefined;
+      };
+      seed_default_library_categories: {
+        Args: { p_studio_id: string };
+        Returns: undefined;
+      };
+      seed_default_library_templates: {
         Args: { p_studio_id: string };
         Returns: undefined;
       };
